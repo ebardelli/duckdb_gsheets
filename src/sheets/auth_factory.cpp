@@ -39,7 +39,7 @@ OAuthReauthCallback BuildReauthCallback(ClientContext &ctx, IHttpClient &http, c
 	// CreateAuthFromSecret's stack frame and won't outlive this call, but the
 	// callback itself may run much later (whenever the token actually
 	// expires).
-	KeyValueSecret secret_template(dynamic_cast<const KeyValueSecret &>(*matched_entry.secret));
+	KeyValueSecret secret_template(matched_entry.secret->Cast<KeyValueSecret>());
 
 	return
 	    [&ctx, &http, client_id, client_secret, persist_type, storage_mode, secret_template]() -> OAuthTokenResponse {
@@ -60,7 +60,7 @@ OAuthReauthCallback BuildReauthCallback(ClientContext &ctx, IHttpClient &http, c
 		    // may have dropped (or replaced) this secret in the meantime -
 		    // REPLACE_ON_CONFLICT would otherwise silently resurrect it.
 		    auto still_exists =
-		        manager.GetSecretByName(transaction, secret_template.GetName(), storage_mode);
+		        manager.GetSecretByName(transaction, secret_template.GetName().GetIdentifierName(), storage_mode);
 		    if (still_exists) {
 			    auto updated = make_uniq<KeyValueSecret>(secret_template);
 			    updated->secret_map["token"] = flow.access_token;
