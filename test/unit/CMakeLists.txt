@@ -33,7 +33,8 @@ set(UNIT_TEST_SOURCES
     ${EXT_ROOT}/src/sheets/auth/bearer_token_auth.cpp
     ${EXT_ROOT}/src/sheets/auth/oauth_auth.cpp
     ${EXT_ROOT}/src/sheets/auth/service_account_auth.cpp
-    # OAuth listener tests (local HTTP listener used by the no-copy-paste OAuth flow)
+    # OAuth listener tests (local HTTP listener used by the no-copy-paste OAuth
+    # flow)
     sheets/auth/test_oauth_listener.cpp
     ${EXT_ROOT}/src/sheets/auth/oauth_listener.cpp
     # Transport (needed for auth tests)
@@ -52,8 +53,7 @@ set(UNIT_TEST_SOURCES
     # Client tests
     sheets/test_client.cpp
     # Utils (needed for client)
-    ${EXT_ROOT}/src/utils/version.cpp
-)
+    ${EXT_ROOT}/src/utils/version.cpp)
 
 add_executable(unit_tests ${UNIT_TEST_SOURCES})
 
@@ -63,7 +63,7 @@ target_link_libraries(unit_tests OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
 # Winsock (required by the OAuth listener on Windows; #pragma comment covers
 # MSVC, but this makes it explicit for other Windows toolchains/generators)
 if(WIN32)
-    target_link_libraries(unit_tests ws2_32)
+  target_link_libraries(unit_tests ws2_32)
 endif()
 
 # Enable testing

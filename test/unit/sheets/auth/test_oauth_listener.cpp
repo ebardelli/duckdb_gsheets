@@ -18,9 +18,9 @@ using namespace duckdb::sheets;
 // =============================================================================
 
 TEST_CASE("BuildAuthorizationUrl assembles the expected query string", "[oauth_listener]") {
-	std::string url = BuildAuthorizationUrl("https://accounts.google.com/o/oauth2/v2/auth", "my-client-id",
-	                                         "http://localhost:8765", "https://www.googleapis.com/auth/spreadsheets",
-	                                         "my-state");
+	std::string url =
+	    BuildAuthorizationUrl("https://accounts.google.com/o/oauth2/v2/auth", "my-client-id", "http://localhost:8765",
+	                          "https://www.googleapis.com/auth/spreadsheets", "my-state");
 
 	REQUIRE(url == "https://accounts.google.com/o/oauth2/v2/auth"
 	               "?client_id=my-client-id"
@@ -96,7 +96,7 @@ TEST_CASE("ExtractPastedToken trims surrounding whitespace from a bare token", "
 
 TEST_CASE("ExtractPastedToken extracts the token from a full redirect URL", "[oauth_listener]") {
 	std::string pasted = "http://localhost:8765/#access_token=ya29.from-url&token_type=Bearer&expires_in=3599&"
-	                      "scope=https://www.googleapis.com/auth/spreadsheets&state=abc123";
+	                     "scope=https://www.googleapis.com/auth/spreadsheets&state=abc123";
 	REQUIRE(ExtractPastedToken(pasted, "abc123") == "ya29.from-url");
 }
 
@@ -201,7 +201,8 @@ bool WaitUntil(std::atomic<bool> &flag) {
 // failing the one test case.
 class AutoJoinThread {
 public:
-	template <typename Func> explicit AutoJoinThread(Func &&func) : thread_(std::forward<Func>(func)) {
+	template <typename Func>
+	explicit AutoJoinThread(Func &&func) : thread_(std::forward<Func>(func)) {
 	}
 	~AutoJoinThread() {
 		join();
@@ -233,8 +234,9 @@ void SendGetThenPost(int port, const std::string &post_body, int family = AF_INE
 
 	socket_t post_socket;
 	REQUIRE(ConnectToLoopback(port, post_socket, family));
-	std::string post_request = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: " +
-	                            std::to_string(post_body.length()) + "\r\n\r\n" + post_body;
+	std::string post_request =
+	    "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: " + std::to_string(post_body.length()) + "\r\n\r\n" +
+	    post_body;
 	SocketSend(post_socket, post_request.c_str(), static_cast<int>(post_request.length()));
 	char post_response[4096] = {0};
 	SocketRecv(post_socket, post_response, sizeof(post_response) - 1);
@@ -249,8 +251,8 @@ void SendGetThenPost(int port, const std::string &post_body, int family = AF_INE
 void SendPostSplitAcrossWrites(int port, const std::string &post_body, int family = AF_INET) {
 	socket_t post_socket;
 	REQUIRE(ConnectToLoopback(port, post_socket, family));
-	std::string headers = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: " +
-	                       std::to_string(post_body.length()) + "\r\n\r\n";
+	std::string headers =
+	    "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: " + std::to_string(post_body.length()) + "\r\n\r\n";
 	SocketSend(post_socket, headers.c_str(), static_cast<int>(headers.length()));
 	std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	SocketSend(post_socket, post_body.c_str(), static_cast<int>(post_body.length()));
@@ -261,8 +263,7 @@ void SendPostSplitAcrossWrites(int port, const std::string &post_body, int famil
 
 } // namespace
 
-TEST_CASE("RunLocalOAuthListener returns the token posted with the matching state",
-          "[oauth_listener][integration]") {
+TEST_CASE("RunLocalOAuthListener returns the token posted with the matching state", "[oauth_listener][integration]") {
 	InitSockets();
 	const int port = TEST_PORT_BASE;
 	const std::string state = "integration-test-state";
@@ -415,7 +416,8 @@ TEST_CASE("RunLocalOAuthListener throws after exhausting its attempt budget", "[
 
 	AutoJoinThread server_thread([&]() {
 		try {
-			RunLocalOAuthListener(port, state, [&]() { listening = true; }, /*max_attempts=*/2);
+			RunLocalOAuthListener(
+			    port, state, [&]() { listening = true; }, /*max_attempts=*/2);
 		} catch (const std::exception &) {
 			threw = true;
 		}

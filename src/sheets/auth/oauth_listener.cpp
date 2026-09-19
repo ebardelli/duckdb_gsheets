@@ -61,7 +61,7 @@ std::string ReadHttpRequest(socket_t client_socket) {
 			}
 			std::string headers = request.substr(0, header_end);
 			std::transform(headers.begin(), headers.end(), headers.begin(),
-			                [](unsigned char c) { return std::tolower(c); });
+			               [](unsigned char c) { return std::tolower(c); });
 			size_t cl_pos = headers.find("content-length:");
 			if (cl_pos != std::string::npos) {
 				try {
@@ -196,21 +196,20 @@ void SendResponse(socket_t client_socket, const std::string &response) {
 // to any server) and POSTs them back to us, same-origin - so no CORS
 // headers are needed, or served, on either response.
 std::string BuildRedirectPageResponse() {
-	std::string body =
-	    "<script>"
-	    "const hash = window.location.hash.substring(1);"
-	    "const params = new URLSearchParams(hash);"
-	    "const token = params.get('access_token');"
-	    "const state = params.get('state') || '';"
-	    "if (token) {"
-	    "  fetch('/', {"
-	    "    method: 'POST',"
-	    "    body: 'state=' + encodeURIComponent(state) + '&access_token=' + encodeURIComponent(token)"
-	    "  }).then(() => {"
-	    "    window.location.href = 'https://duckdb-gsheets.com/oauth#ready=1&access_token=success';"
-	    "  });"
-	    "}"
-	    "</script></body></html>";
+	std::string body = "<script>"
+	                   "const hash = window.location.hash.substring(1);"
+	                   "const params = new URLSearchParams(hash);"
+	                   "const token = params.get('access_token');"
+	                   "const state = params.get('state') || '';"
+	                   "if (token) {"
+	                   "  fetch('/', {"
+	                   "    method: 'POST',"
+	                   "    body: 'state=' + encodeURIComponent(state) + '&access_token=' + encodeURIComponent(token)"
+	                   "  }).then(() => {"
+	                   "    window.location.href = 'https://duckdb-gsheets.com/oauth#ready=1&access_token=success';"
+	                   "  });"
+	                   "}"
+	                   "</script></body></html>";
 	return "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\nContent-Length: " +
 	       std::to_string(body.length()) + "\r\n\r\n" + body;
 }
@@ -275,8 +274,7 @@ bool StdinHasPendingData() {
 } // namespace
 
 std::string BuildAuthorizationUrl(const std::string &auth_url, const std::string &client_id,
-                                   const std::string &redirect_uri, const std::string &scope,
-                                   const std::string &state) {
+                                  const std::string &redirect_uri, const std::string &scope, const std::string &state) {
 	return auth_url + "?client_id=" + client_id + "&redirect_uri=" + redirect_uri + "&response_type=token" +
 	       "&scope=" + scope + "&state=" + state;
 }
@@ -362,9 +360,9 @@ bool TryReadPastedLine(std::string &line) {
 }
 
 std::string RunLocalOAuthListener(int port, const std::string &expected_state,
-                                   const std::function<void()> &on_listening, int max_attempts,
-                                   const std::function<bool()> &is_interrupted,
-                                   const std::function<bool(std::string &)> &try_read_pasted_input) {
+                                  const std::function<void()> &on_listening, int max_attempts,
+                                  const std::function<bool()> &is_interrupted,
+                                  const std::function<bool(std::string &)> &try_read_pasted_input) {
 	if (!InitSockets()) {
 		throw IOException("Failed to initialize sockets");
 	}

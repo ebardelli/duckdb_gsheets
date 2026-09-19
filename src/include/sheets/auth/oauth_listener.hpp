@@ -15,8 +15,7 @@ constexpr int kOAuthListenerTimeoutSeconds = 300;
 // Builds the Google OAuth2 authorization URL. Pure/side-effect-free so it can
 // be unit tested without any network or browser involved.
 std::string BuildAuthorizationUrl(const std::string &auth_url, const std::string &client_id,
-                                   const std::string &redirect_uri, const std::string &scope,
-                                   const std::string &state);
+                                  const std::string &redirect_uri, const std::string &scope, const std::string &state);
 
 // Extracts the body of a raw HTTP request (everything after the blank line
 // separating headers from body). Returns an empty string if the request has
@@ -109,9 +108,9 @@ bool TryReadPastedLine(std::string &line);
 // local listener actually receiving the redirect, e.g. when DuckDB runs on a
 // remote host the browser can't reach back into.
 std::string RunLocalOAuthListener(int port, const std::string &expected_state,
-                                   const std::function<void()> &on_listening = nullptr, int max_attempts = 20,
-                                   const std::function<bool()> &is_interrupted = nullptr,
-                                   const std::function<bool(std::string &)> &try_read_pasted_input = nullptr);
+                                  const std::function<void()> &on_listening = nullptr, int max_attempts = 20,
+                                  const std::function<bool()> &is_interrupted = nullptr,
+                                  const std::function<bool(std::string &)> &try_read_pasted_input = nullptr);
 
 } // namespace sheets
 } // namespace duckdb
