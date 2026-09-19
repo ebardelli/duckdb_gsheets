@@ -133,6 +133,14 @@ TEST_CASE("ExtractPastedToken percent-decodes the token from a full redirect URL
 	REQUIRE(ExtractPastedToken(pasted, "abc123") == "ya29.has/slash");
 }
 
+TEST_CASE("ExtractPastedToken decodes '+' as a space in the token", "[oauth_listener]") {
+	// '+' is a valid space encoding in x-www-form-urlencoded query strings
+	// (as opposed to path segments), which is the context every value
+	// url_decode is used on here.
+	std::string pasted = "http://localhost:8765/#access_token=ya29.has+a+space&state=abc123";
+	REQUIRE(ExtractPastedToken(pasted, "abc123") == "ya29.has a space");
+}
+
 // =============================================================================
 // RunLocalOAuthListener / RunLocalOAuthCodeListener Integration Tests
 // =============================================================================

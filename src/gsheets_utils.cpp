@@ -91,6 +91,8 @@ std::string url_decode(const std::string &str) {
 			int value = std::stoi(str.substr(i + 1, 2), nullptr, 16);
 			decoded += static_cast<char>(value);
 			i += 2;
+		} else if (str[i] == '+') {
+			decoded += ' ';
 		} else {
 			decoded += str[i];
 		}

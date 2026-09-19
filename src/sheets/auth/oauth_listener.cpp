@@ -377,11 +377,11 @@ private:
 // URI (which must stay in sync with what's registered for the OAuth client).
 //
 // If neither family can bind at all (e.g. the port is already in use by
-// another concurrent login), this falls back to a listener-less, paste-only
-// mode rather than failing the whole flow outright - as long as a paste
-// fallback is actually available (stdin is an interactive terminal); if it
-// isn't, there would be no way to ever complete the login, so this throws
-// instead.
+// another concurrent login), this throws rather than falling back to a
+// listener-less, paste-only mode: whatever else is bound to this fixed,
+// pre-registered redirect port would receive the OAuth redirect - and the
+// token/code in it - instead, so silently continuing without a listener
+// would risk handing that other process the credential.
 //
 // `has_paste_fallback` is false whenever `try_read_pasted_input` is unset,
 // i.e. stdin isn't an interactive terminal - see PrepareLoginCallbacks in
@@ -415,13 +415,9 @@ std::string RunLoginListenerLoop(int port, const std::function<void()> &on_liste
 	LoopbackHttpServer v6("::1", port);
 
 	if (!v4.IsBound() && !v6.IsBound()) {
-		if (!try_read_pasted_input) {
-			throw IOException("Failed to bind to port " + std::to_string(port) +
-			                  " (already in use?) and no paste fallback is available "
-			                  "(stdin isn't an interactive terminal)");
-		}
-		std::cerr << "Warning: could not bind to port " << port
-		          << " (already in use by another process?) - falling back to pasting the redirect URL manually.\n";
+		throw IOException("Failed to bind to port " + std::to_string(port) +
+		                  " (already in use by another process?). Free the port and retry, or authenticate with "
+		                  "PROVIDER access_token or PROVIDER key_file instead.");
 	}
 
 	if (v4.IsBound()) {

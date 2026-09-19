@@ -13,13 +13,43 @@ namespace sheets {
 constexpr int DEFAULT_TOKEN_TTL = 3600;
 constexpr const char *TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
+namespace {
+
+// Pulls out only the standard OAuth2 error shape (RFC 6749 5.2:
+// "error"/"error_description") for use in exception messages. Deliberately
+// never echoes the raw response body: that can carry sensitive details (e.g.
+// token fields) that shouldn't end up in logs/errors. Returns "" if the body
+// isn't JSON or doesn't have those fields.
+std::string SafeErrorDetail(const std::string &body) {
+	try {
+		json j = json::parse(body);
+		std::string detail;
+		if (j.contains("error") && j.at("error").is_string()) {
+			detail = j.at("error").get<std::string>();
+		}
+		if (j.contains("error_description") && j.at("error_description").is_string()) {
+			if (!detail.empty()) {
+				detail += ": ";
+			}
+			detail += j.at("error_description").get<std::string>();
+		}
+		return detail;
+	} catch (const json::exception &) {
+		return "";
+	}
+}
+
+} // namespace
+
 OAuthTokenResponse PostToTokenEndpoint(IHttpClient &http, const std::string &body, const std::string &context_label) {
 	HttpHeaders headers;
 	headers["Content-Type"] = "application/x-www-form-urlencoded";
 	HttpResponse response = http.Post(TOKEN_ENDPOINT, headers, body);
 
 	if (response.statusCode != 200) {
-		throw IOException(context_label + " failed: " + response.body);
+		std::string detail = SafeErrorDetail(response.body);
+		throw IOException(context_label + " failed with status " + std::to_string(response.statusCode) +
+		                  (detail.empty() ? "" : ": " + detail));
 	}
 
 	// access_token/expires_in/refresh_token are all extracted inside this one
@@ -31,7 +61,7 @@ OAuthTokenResponse PostToTokenEndpoint(IHttpClient &http, const std::string &bod
 		json responseJson = json::parse(response.body);
 
 		if (!responseJson.contains("access_token")) {
-			throw IOException(context_label + " response missing 'access_token': " + response.body);
+			throw IOException(context_label + " response missing 'access_token'");
 		}
 
 		OAuthTokenResponse result;
@@ -42,7 +72,7 @@ OAuthTokenResponse PostToTokenEndpoint(IHttpClient &http, const std::string &bod
 		result.expires_in = responseJson.value("expires_in", DEFAULT_TOKEN_TTL);
 		return result;
 	} catch (const json::exception &) {
-		throw IOException("Failed to parse " + context_label + " response: " + response.body);
+		throw IOException("Failed to parse " + context_label + " response");
 	}
 }
 

@@ -30,15 +30,22 @@ std::string OAuthAuth::GetAuthorizationHeader() {
 	// doesn't need to wait on until it actually needs the result.
 	refreshing = true;
 	lock.unlock();
+	OAuthTokenResponse tokenResponse;
 	try {
-		Refresh();
+		tokenResponse = Refresh();
 	} catch (...) {
 		lock.lock();
 		refreshing = false;
 		refreshCv.notify_all();
 		throw;
 	}
+	// Re-acquired before touching cachedToken/expirationTime: Refresh() itself
+	// only performs the (lock-free) HTTP call, so these writes - and every
+	// read of the same fields in IsExpired()/GetAuthorizationHeader() - stay
+	// synchronized on cacheMutex.
 	lock.lock();
+	cachedToken = tokenResponse.access_token;
+	expirationTime = std::time(nullptr) + tokenResponse.expires_in - 60; // refresh 1 min early
 	refreshing = false;
 	refreshCv.notify_all();
 	return "Bearer " + cachedToken;
@@ -52,14 +59,11 @@ bool OAuthAuth::IsExpired() {
 	return now >= expirationTime;
 }
 
-void OAuthAuth::Refresh() {
+OAuthTokenResponse OAuthAuth::Refresh() {
 	std::string body = "grant_type=refresh_token" + ("&refresh_token=" + url_encode(refreshToken)) +
 	                   ("&client_id=" + url_encode(clientId)) + ("&client_secret=" + url_encode(clientSecret));
 
-	OAuthTokenResponse tokenResponse = PostToTokenEndpoint(http, body, "OAuth token refresh");
-
-	cachedToken = tokenResponse.access_token;
-	expirationTime = std::time(nullptr) + tokenResponse.expires_in - 60; // refresh 1 min early
+	return PostToTokenEndpoint(http, body, "OAuth token refresh");
 }
 
 } // namespace sheets

@@ -6,6 +6,7 @@
 #include <string>
 
 #include "sheets/auth/auth_provider.hpp"
+#include "sheets/auth/oauth_token_exchange.hpp"
 #include "sheets/transport/http_client.hpp"
 
 namespace duckdb {
@@ -51,7 +52,7 @@ private:
 	std::string cachedToken;
 	std::time_t expirationTime = 0;
 
-	void Refresh();
+	OAuthTokenResponse Refresh();
 	bool IsExpired();
 };
 
