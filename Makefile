@@ -13,7 +13,7 @@ include extension-ci-tools/makefiles/duckdb_extension.Makefile
 # Build unit tests (standalone, doesn't require full DuckDB build)
 test_unit_build:
 	mkdir -p build/unit_tests
-	cmake -G "Ninja" -S test/unit -B build/unit_tests
+	cmake -G "Ninja" ${EXT_FLAGS} -S test/unit -B build/unit_tests
 	cmake --build build/unit_tests
 
 # Run unit tests (builds if needed)
