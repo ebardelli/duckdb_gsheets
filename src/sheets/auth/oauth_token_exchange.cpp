@@ -15,28 +15,41 @@ constexpr const char *TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
 namespace {
 
-// Pulls out only the standard OAuth2 error shape (RFC 6749 5.2:
-// "error"/"error_description") for use in exception messages. Deliberately
-// never echoes the raw response body: that can carry sensitive details (e.g.
-// token fields) that shouldn't end up in logs/errors. Returns "" if the body
-// isn't JSON or doesn't have those fields.
-std::string SafeErrorDetail(const std::string &body) {
+// The standard OAuth2 error shape (RFC 6749 5.2: "error"/"error_description")
+// pulled out of a token-endpoint error response.
+struct SafeError {
+	// For use in exception messages. Deliberately never the raw response
+	// body: that can carry sensitive details (e.g. token fields) that
+	// shouldn't end up in logs/errors. "" if the body isn't JSON or doesn't
+	// have these fields.
+	std::string detail;
+	// Whether "error" is exactly "invalid_grant". false whenever detail
+	// extraction itself failed, so a malformed/non-JSON body never gets
+	// misclassified as invalid_grant.
+	bool is_invalid_grant = false;
+};
+
+// Single json::parse of `body` backing both fields of SafeError - the two
+// were previously extracted by separate, independently-parsing helpers.
+SafeError ParseSafeError(const std::string &body) {
+	SafeError result;
 	try {
 		json j = json::parse(body);
-		std::string detail;
 		if (j.contains("error") && j.at("error").is_string()) {
-			detail = j.at("error").get<std::string>();
+			std::string error = j.at("error").get<std::string>();
+			result.is_invalid_grant = (error == "invalid_grant");
+			result.detail = error;
 		}
 		if (j.contains("error_description") && j.at("error_description").is_string()) {
-			if (!detail.empty()) {
-				detail += ": ";
+			if (!result.detail.empty()) {
+				result.detail += ": ";
 			}
-			detail += j.at("error_description").get<std::string>();
+			result.detail += j.at("error_description").get<std::string>();
 		}
-		return detail;
 	} catch (const json::exception &) {
-		return "";
+		// Leave result at its defaults: detail "", is_invalid_grant false.
 	}
+	return result;
 }
 
 } // namespace
@@ -47,9 +60,13 @@ OAuthTokenResponse PostToTokenEndpoint(IHttpClient &http, const std::string &bod
 	HttpResponse response = http.Post(TOKEN_ENDPOINT, headers, body);
 
 	if (response.statusCode != 200) {
-		std::string detail = SafeErrorDetail(response.body);
-		throw IOException(context_label + " failed with status " + std::to_string(response.statusCode) +
-		                  (detail.empty() ? "" : ": " + detail));
+		SafeError error = ParseSafeError(response.body);
+		std::string message = context_label + " failed with status " + std::to_string(response.statusCode) +
+		                      (error.detail.empty() ? "" : ": " + error.detail);
+		if (error.is_invalid_grant) {
+			throw OAuthInvalidGrantException(message);
+		}
+		throw IOException(message);
 	}
 
 	// access_token/expires_in/refresh_token are all extracted inside this one

@@ -32,20 +32,36 @@ std::string OAuthAuth::GetAuthorizationHeader() {
 	lock.unlock();
 	OAuthTokenResponse tokenResponse;
 	try {
-		tokenResponse = Refresh();
+		try {
+			tokenResponse = Refresh();
+		} catch (const OAuthInvalidGrantException &) {
+			// The refresh_token itself is dead (revoked/expired), not just a
+			// transient failure - Refresh() with the same refresh_token would
+			// only fail the same way again. Only a fresh interactive login can
+			// recover from this, so fall back to that if the caller wired one
+			// up; otherwise this is the same terminal failure it always was.
+			if (!reauthCallback) {
+				throw;
+			}
+			tokenResponse = reauthCallback();
+		}
 	} catch (...) {
 		lock.lock();
 		refreshing = false;
 		refreshCv.notify_all();
 		throw;
 	}
-	// Re-acquired before touching cachedToken/expirationTime: Refresh() itself
-	// only performs the (lock-free) HTTP call, so these writes - and every
-	// read of the same fields in IsExpired()/GetAuthorizationHeader() - stay
+	// Re-acquired before touching cachedToken/expirationTime/refreshToken:
+	// Refresh()/reauthCallback() themselves only perform the (lock-free) HTTP
+	// call / interactive login, so these writes - and every read of the same
+	// fields in IsExpired()/GetAuthorizationHeader()/Refresh() - stay
 	// synchronized on cacheMutex.
 	lock.lock();
 	cachedToken = tokenResponse.access_token;
 	expirationTime = std::time(nullptr) + tokenResponse.expires_in - 60; // refresh 1 min early
+	if (!tokenResponse.refresh_token.empty()) {
+		refreshToken = tokenResponse.refresh_token;
+	}
 	refreshing = false;
 	refreshCv.notify_all();
 	return "Bearer " + cachedToken;

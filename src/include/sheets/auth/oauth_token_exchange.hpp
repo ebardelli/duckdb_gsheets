@@ -2,10 +2,24 @@
 
 #include <string>
 
+#include "duckdb/common/exception.hpp"
+
 #include "sheets/transport/http_client.hpp"
 
 namespace duckdb {
 namespace sheets {
+
+// Thrown specifically when the token endpoint rejects a request with
+// error=invalid_grant (RFC 6749 5.2) - e.g. a refresh_token that has been
+// revoked or expired. Distinct from the generic IOException
+// PostToTokenEndpoint otherwise throws so a caller holding a long-lived
+// refresh_token (OAuthAuth) can catch this one case specifically and trigger
+// re-authentication instead of just failing.
+class OAuthInvalidGrantException : public IOException {
+public:
+	explicit OAuthInvalidGrantException(const std::string &msg) : IOException(msg) {
+	}
+};
 
 // The token_endpoint response fields both OAuth flows need: OAuthAuth's
 // refresh_token -> access_token exchange, and the authorization-code flow's
@@ -25,7 +39,9 @@ struct OAuthTokenResponse {
 // "OAuth token exchange") so both callers get on-brand error messages - on
 // any failure: a non-200 response, a body that isn't valid JSON, a field
 // that's present but the wrong type (e.g. access_token: null), or a response
-// missing access_token entirely. A response with no refresh_token is not an
+// missing access_token entirely. A non-200 response whose body is
+// error=invalid_grant throws the more specific OAuthInvalidGrantException
+// (itself an IOException) instead. A response with no refresh_token is not an
 // error here - refresh_token grants don't return one, and it's each caller's
 // job to decide whether its own flow requires one.
 OAuthTokenResponse PostToTokenEndpoint(IHttpClient &http, const std::string &body, const std::string &context_label);

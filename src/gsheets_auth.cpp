@@ -1,6 +1,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <mutex>
 #include <cstdlib>
 #include <json.hpp>
 
@@ -23,6 +24,15 @@
 using json = nlohmann::json;
 
 namespace duckdb {
+
+// Both InitiateOAuthFlow and RunOAuthCodeFlow bind their local redirect
+// listener on this same hardcoded port (see PORT in each) - it has to be
+// fixed, since it's baked into the redirect_uri registered for the OAuth
+// client. Two logins can't listen on it at once, so every login (whichever
+// flow, whichever client_id/secret) serializes through this mutex; auto
+// reauth (auth_factory.cpp's reauth callback) makes concurrent attempts
+// realistic where before this was only a rare, explicit user action.
+static std::mutex oauth_local_listener_mutex;
 
 // Whether stdin is a real interactive terminal rather than a pipe/redirect
 // (e.g. `duckdb < script.sql`, or the extension embedded in some other
@@ -161,10 +171,11 @@ static unique_ptr<BaseSecret> CreateGsheetSecretFromAccessToken(ClientContext &c
 // response that (unexpectedly, given access_type=offline&prompt=consent)
 // lacks a refresh_token - a secret that silently can't refresh would be a
 // confusing dead end.
-static std::string ExchangeAuthorizationCodeForTokens(sheets::IHttpClient &http, const std::string &code,
-                                                      const std::string &client_id, const std::string &client_secret,
-                                                      const std::string &redirect_uri, const std::string &code_verifier,
-                                                      std::string &out_refresh_token) {
+static sheets::OAuthTokenResponse ExchangeAuthorizationCodeForTokens(sheets::IHttpClient &http, const std::string &code,
+                                                                     const std::string &client_id,
+                                                                     const std::string &client_secret,
+                                                                     const std::string &redirect_uri,
+                                                                     const std::string &code_verifier) {
 	std::string body = "grant_type=authorization_code" + ("&code=" + url_encode(code)) +
 	                   ("&client_id=" + url_encode(client_id)) + ("&client_secret=" + url_encode(client_secret)) +
 	                   ("&redirect_uri=" + url_encode(redirect_uri)) + ("&code_verifier=" + url_encode(code_verifier));
@@ -177,42 +188,7 @@ static std::string ExchangeAuthorizationCodeForTokens(sheets::IHttpClient &http,
 		                  "https://myaccount.google.com/permissions and try again.");
 	}
 
-	out_refresh_token = tokenResponse.refresh_token;
-	return tokenResponse.access_token;
-}
-
-struct OAuthCodeFlowResult {
-	std::string access_token;
-	std::string refresh_token;
-};
-
-// Runs the authorization-code + PKCE flow (browser login, then a
-// server-side token exchange) for a caller-supplied OAuth client_id and
-// client_secret, returning both an access_token and a refresh_token. See
-// InitiateOAuthFlow for the default implicit-grant flow this sits
-// alongside.
-static OAuthCodeFlowResult InitiateOAuthCodeFlow(ClientContext &context, sheets::IHttpClient &http,
-                                                 const std::string &client_id, const std::string &client_secret) {
-	const int PORT = 8765;
-	const std::string redirect_uri = "http://localhost:" + std::to_string(PORT);
-	const std::string auth_url = "https://accounts.google.com/o/oauth2/v2/auth";
-	const std::string scope = "https://www.googleapis.com/auth/spreadsheets";
-
-	std::string state = generate_random_string(10);
-	std::string code_verifier = sheets::GeneratePkceCodeVerifier();
-	std::string code_challenge = sheets::GeneratePkceCodeChallenge(code_verifier);
-	std::string auth_request_url =
-	    sheets::BuildAuthorizationCodeUrl(auth_url, client_id, redirect_uri, scope, state, code_challenge);
-
-	LoginCallbacks callbacks = PrepareLoginCallbacks(context, auth_request_url, "(or just its authorization code)");
-
-	std::string code = sheets::RunLocalOAuthCodeListener(PORT, state, callbacks.open_browser, /*max_attempts=*/20,
-	                                                     callbacks.is_interrupted, callbacks.try_read_pasted_input);
-
-	OAuthCodeFlowResult result;
-	result.access_token = ExchangeAuthorizationCodeForTokens(http, code, client_id, client_secret, redirect_uri,
-	                                                         code_verifier, result.refresh_token);
-	return result;
+	return tokenResponse;
 }
 
 static unique_ptr<BaseSecret> CreateGsheetSecretFromOAuth(ClientContext &context, CreateSecretInput &input) {
@@ -240,7 +216,7 @@ static unique_ptr<BaseSecret> CreateGsheetSecretFromOAuth(ClientContext &context
 		// PKCE flow, capturing a refresh_token so future queries can
 		// silently reauthenticate via OAuthAuth with no browser interaction.
 		auto http = sheets::CreateHttpClient(context);
-		OAuthCodeFlowResult flow_result = InitiateOAuthCodeFlow(context, *http, effective_client_id, client_secret);
+		sheets::OAuthTokenResponse flow_result = RunOAuthCodeFlow(context, *http, effective_client_id, client_secret);
 
 		result->secret_map["token"] = flow_result.access_token;
 		result->secret_map["refresh_token"] = flow_result.refresh_token;
@@ -352,8 +328,34 @@ std::string InitiateOAuthFlow(ClientContext &context, const std::string &client_
 
 	LoginCallbacks callbacks = PrepareLoginCallbacks(context, auth_request_url, "(or just its access_token)");
 
+	std::lock_guard<std::mutex> port_guard(oauth_local_listener_mutex);
 	return sheets::RunLocalOAuthListener(PORT, state, callbacks.open_browser, /*max_attempts=*/20,
 	                                     callbacks.is_interrupted, callbacks.try_read_pasted_input);
+}
+
+sheets::OAuthTokenResponse RunOAuthCodeFlow(ClientContext &context, sheets::IHttpClient &http,
+                                            const std::string &client_id, const std::string &client_secret) {
+	const int PORT = 8765;
+	const std::string redirect_uri = "http://localhost:" + std::to_string(PORT);
+	const std::string auth_url = "https://accounts.google.com/o/oauth2/v2/auth";
+	const std::string scope = "https://www.googleapis.com/auth/spreadsheets";
+
+	std::string state = generate_random_string(10);
+	std::string code_verifier = sheets::GeneratePkceCodeVerifier();
+	std::string code_challenge = sheets::GeneratePkceCodeChallenge(code_verifier);
+	std::string auth_request_url =
+	    sheets::BuildAuthorizationCodeUrl(auth_url, client_id, redirect_uri, scope, state, code_challenge);
+
+	LoginCallbacks callbacks = PrepareLoginCallbacks(context, auth_request_url, "(or just its authorization code)");
+
+	std::string code;
+	{
+		std::lock_guard<std::mutex> port_guard(oauth_local_listener_mutex);
+		code = sheets::RunLocalOAuthCodeListener(PORT, state, callbacks.open_browser, /*max_attempts=*/20,
+		                                         callbacks.is_interrupted, callbacks.try_read_pasted_input);
+	}
+
+	return ExchangeAuthorizationCodeForTokens(http, code, client_id, client_secret, redirect_uri, code_verifier);
 }
 
 } // namespace duckdb
