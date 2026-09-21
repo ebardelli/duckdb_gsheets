@@ -28,10 +28,16 @@ add_executable(
 # (needed for ExtensionHelper::LoadAllExtensions, referenced by DuckDB::DuckDB's
 # constructor even though this binary never calls it) - reusing it here instead
 # of hand-picking symbols keeps this in sync with however that dependency
-# evolves upstream.
-link_extension_libraries(oauth_listener_tests "")
+# evolves upstream. duckdb_static must be linked *before* this call, matching
+# DuckDB's own unittest/shell targets (test/CMakeLists.txt,
+# tools/shell/CMakeLists.txt): GNU ld's single-pass, order-sensitive static-lib
+# resolution only pulls duckdb_generated_extension_loader's definition of
+# LoadAllExtensions in if duckdb_static (which references it) already appeared
+# on the link line - the reverse order links fine with macOS's linker but
+# fails with an undefined reference on Linux.
 target_link_libraries(oauth_listener_tests duckdb_static OpenSSL::SSL
                       OpenSSL::Crypto)
+link_extension_libraries(oauth_listener_tests "")
 
 # Winsock (required by httplib on Windows; #pragma comment covers MSVC, but this
 # makes it explicit for other Windows toolchains/generators), matching the main
