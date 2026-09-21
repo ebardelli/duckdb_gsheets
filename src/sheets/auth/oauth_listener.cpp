@@ -399,6 +399,19 @@ std::string BuildTimeoutMessage(bool has_paste_fallback) {
 	return message;
 }
 
+// Distinct from BuildTimeoutMessage: this is the outcome.gave_up path, where
+// `failed_attempts` callbacks were received and rejected (wrong/missing
+// state, malformed payload) before the wall-clock deadline. Reporting that
+// separately from a plain timeout points at the actual problem - a stale
+// login link, a client racing a previous attempt's redirect, etc. - instead
+// of leaving it looking like nothing arrived at all.
+std::string BuildGaveUpMessage(int failed_attempts) {
+	return "Received " + std::to_string(failed_attempts) +
+	       " OAuth callback(s) that failed validation (wrong or missing state, or a malformed payload) without "
+	       "receiving a valid one - giving up rather than waiting out the full timeout. Retry the login rather than "
+	       "reusing an old authorization link or tab.";
+}
+
 std::string RunLoginListenerLoop(int port, const std::function<void()> &on_listening, int max_attempts,
                                  const std::function<bool()> &is_interrupted,
                                  const std::function<bool(std::string &)> &try_read_pasted_input,
@@ -441,7 +454,7 @@ std::string RunLoginListenerLoop(int port, const std::function<void()> &on_liste
 			bool signaled = outcome.cv.wait_for(lock, std::chrono::seconds(1), [&] { return outcome.done; });
 			if (signaled) {
 				if (outcome.gave_up) {
-					throw IOException(BuildTimeoutMessage(static_cast<bool>(try_read_pasted_input)));
+					throw IOException(BuildGaveUpMessage(outcome.failed_attempts));
 				}
 				return outcome.value;
 			}
