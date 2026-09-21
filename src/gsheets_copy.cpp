@@ -30,7 +30,6 @@ GSheetCopyFunction::GSheetCopyFunction() : CopyFunction("gsheet") {
 unique_ptr<FunctionData> GSheetCopyFunction::GSheetWriteBind(ClientContext &context, CopyFunctionBindInput &input,
                                                              const vector<string> &names,
                                                              const vector<LogicalType> &sql_types) {
-
 	string file_path = input.info.file_path;
 	auto options = input.info.options;
 
@@ -61,9 +60,15 @@ unique_ptr<GlobalFunctionData> GSheetCopyFunction::GSheetWriteInitializeGlobal(C
 	std::string sheet_name;
 	std::string sheet_range;
 
-	// Initialize client
+	// Initialize client. allow_interactive_reauth=false: this auth provider is
+	// stored in GlobalFunctionData and its GetAuthorizationHeader is called
+	// again from GSheetWriteSink on every batch, potentially from a different
+	// worker thread each time under a parallel COPY (PER_THREAD_OUTPUT) - see
+	// CreateAuthFromSecret's doc. An invalid_grant there still fails cleanly,
+	// same as before automatic reauth existed; only a single-threaded caller
+	// like ReadSheetBind gets the interactive reauth path.
 	auto http = sheets::CreateHttpClient(context);
-	auto auth = sheets::CreateAuthFromSecret(context, *http);
+	auto auth = sheets::CreateAuthFromSecret(context, *http, /*allow_interactive_reauth=*/false);
 	if (!auth) {
 		throw InvalidInputException("No 'gsheet' secret found...");
 	}
