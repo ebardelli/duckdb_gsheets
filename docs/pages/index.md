@@ -14,7 +14,7 @@ hide_title: true
 
 A DuckDB extension for reading and writing Google Sheets with SQL.
 
-_Note: This project is not affliated with Google or DuckDB, it is a community extension maintained by [Evidence](https://evidence.dev)._
+_Note: This is a fork of the [DuckDB GSheets extension](https://duckdb-gsheets.com) ([source](https://github.com/evidence-dev/duckdb_gsheets)) maintained by [Evidence](https://evidence.dev). It publishes builds for DuckDB 2.0 until those are available upstream. This project is not affiliated with Google or DuckDB._
 
 ## Install
 
@@ -88,6 +88,32 @@ CREATE SECRET (
     SECRET '<private_key>'
 );
 ```
+
+### How the browser login works
+
+`CREATE SECRET (TYPE gsheet)` (the `oauth` provider) signs you in with Google OAuth 2.0 in your browser:
+
+1. DuckDB opens Google's sign-in page in your default browser and prints the same URL in case the browser doesn't open. It asks for access to Google Sheets only (`https://www.googleapis.com/auth/spreadsheets`).
+2. A temporary listener on `http://localhost:8765` waits for Google to redirect back after you sign in. That completes the login without any copy and paste. Port 8765 must be free; if it isn't, `CREATE SECRET` fails with an error saying so.
+3. The login times out after 5 minutes. Press Ctrl+C to cancel it sooner.
+
+**Remote or headless machines.** If DuckDB runs somewhere your browser's redirect can't reach (over SSH, in a container), the redirect to `localhost` fails. When DuckDB is reading from an interactive terminal, it also offers to accept the redirect URL instead: after signing in, copy the full URL from the browser's address bar (it will show an error page, which is expected), paste it into the terminal and press Enter. A `state` value in the URL is checked, so a URL from a different login is rejected.
+
+**Which flow you get** depends on the options you pass:
+
+| Options | Flow | Result |
+|---|---|---|
+| none | Implicit grant, built-in OAuth app | Access token only. It expires after about an hour, and you sign in again. |
+| `CLIENT_ID` | Implicit grant, your OAuth app | Same as above, using your app. |
+| `CLIENT_ID` + `CLIENT_SECRET` | Authorization code with PKCE, your OAuth app | Access token **and** refresh token. Expired access tokens are renewed in the background without a browser. |
+
+With a refresh token, the extension renews the access token about a minute before it expires. If Google revokes the refresh token (for example, you remove the app's access in your Google account, or the token goes unused for a long time), the next `read_gsheet` call opens the browser login again and saves the new tokens back to the secret. This also updates a `PERSISTENT` secret. `COPY ... TO` never prompts and fails with an error instead; run a `read_gsheet` query or re-create the secret to sign in again.
+
+Tokens, the refresh token and the client secret are redacted when you list secrets. A `PERSISTENT` secret is stored on disk in DuckDB's secret directory, so treat that directory as sensitive.
+
+If your own OAuth app's publishing status in Google Cloud Console is still "Testing", Google expires its refresh tokens after 7 days, so you'll be asked to sign in about once a week. Publish the app to avoid this.
+
+For a non-interactive setup such as a scheduled pipeline, use a service account (`key_file` provider) instead.
 
 ### HTTP Proxy
 
