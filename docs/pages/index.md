@@ -35,7 +35,7 @@ CREATE EXTENSION REPOSITORY gsheets_fork WITH PREFIX 'https://ebardelli.github.i
 INSTALL AND LOAD gsheets FROM gsheets_fork;
 ```
 
-`CREATE EXTENSION REPOSITORY` prints the fingerprint of the signing key it pinned. Check that it matches `FINGERPRINT_PLACEHOLDER`. The repository only needs to be created once; it persists across sessions. In later sessions, load the extension with `LOAD gsheets FROM gsheets_fork;`. To install a specific release, use `FORCE INSTALL gsheets FROM gsheets_fork VERSION 'vX.Y.Z';`.
+`CREATE EXTENSION REPOSITORY` prints the fingerprint of the signing key it pinned. Check that it matches `sha256:30a99a8ad18afde28756024575259ce6a65eb53232d91790efaff11035fdcacc`. The repository only needs to be created once; it persists across sessions. In later sessions, load the extension with `LOAD gsheets FROM gsheets_fork;`. To install a specific release, use `FORCE INSTALL gsheets FROM gsheets_fork VERSION 'vX.Y.Z';`.
 
 ## Usage
 
