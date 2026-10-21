@@ -123,6 +123,28 @@ graph LR
 
 For fork PRs, maintainers can manually trigger SQL tests via **Actions → SQL Tests → Run workflow**.
 
+## Releasing
+
+Pushing a `v*` tag runs `.github/workflows/Release.yml`:
+
+1. Builds the extension for every platform against the DuckDB release named in `duckdb_version` (wasm is excluded). This must be a release tag such as `v2.0.0`, not a branch: branch builds are stamped with a dev version that released DuckDB clients refuse to load.
+2. Signs each binary with `scripts/sign_extension.sh`, verifies the signature against `scripts/extension_signing_public_key.pem`, and attaches the gzipped binaries to the GitHub release.
+3. Triggers `deploy_docs.yml` on `main`, which downloads the binaries from all non-draft, non-prerelease releases and lays them out under `/extensions` with `scripts/build_extension_repo.py`, next to the docs.
+
+The site then serves a DuckDB extension repository at `https://ebardelli.github.io/duckdb_gsheets/extensions`:
+
+```
+.well-known/duckdb-extension-repo.json                        signing public keys
+<duckdb_version>/<platform>/gsheets.duckdb_extension.gz         newest release
+gsheets/<tag>/<duckdb_version>/<platform>/gsheets.duckdb_extension.gz   last 3 releases
+```
+
+Only the last three releases get versioned copies, because a Pages site is limited to 1 GB.
+
+### Signing key
+
+The private key is the `DUCKDB_EXTENSION_SIGNING_PK` repository secret: a 2048-bit RSA key in PEM format. The matching public key is committed as `scripts/extension_signing_public_key.pem`. To rotate keys, add the new public key to `.well-known` (pass a second `--public-key` to `build_extension_repo.py`) before switching the secret, so existing users can re-create the repository and trust both keys during the switch.
+
 ## Installing deployed binaries
 
 DuckDB must be launched with `allow_unsigned_extensions` set to true:
