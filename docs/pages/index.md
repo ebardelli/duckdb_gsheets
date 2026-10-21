@@ -17,7 +17,7 @@ INSTALL gsheets FROM community;
 LOAD gsheets;
 ```
 
-This version is compatible with [DuckDB](https://duckdb.org/docs/installation) 2.0.0.
+The community build is maintained upstream and supports [DuckDB](https://duckdb.org/docs/installation) versions up to 1.5.6. For DuckDB 2.0, install from this fork instead (see below).
 
 ### DuckDB 2.0 builds
 
