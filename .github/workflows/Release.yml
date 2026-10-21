@@ -1,0 +1,70 @@
+#
+# Builds, signs and publishes the extension to our self-hosted extension repository on GitHub Pages.
+# Triggered by pushing a version tag; the binaries are attached to the GitHub release and the Pages
+# site (deploy_docs.yml) serves them from there.
+#
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build extension binaries
+    # Keep duckdb_version a release tag: binaries built from a branch are stamped with a dev
+    # version that released DuckDB clients refuse to load.
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v2.0-cyanoptera
+    with:
+      duckdb_version: v2.0.0
+      ci_tools_version: v2.0-cyanoptera
+      extension_name: gsheets
+      exclude_archs: "windows_amd64_rtools;wasm_mvp;wasm_eh;wasm_threads"
+
+  publish:
+    name: Sign and publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gsheets-*-extension-*
+          path: artifacts
+
+      - name: Sign binaries
+        env:
+          DUCKDB_EXTENSION_SIGNING_PK: ${{ secrets.DUCKDB_EXTENSION_SIGNING_PK }}
+        run: |
+          mkdir dist
+          for dir in artifacts/*/; do
+            name=$(basename "$dir" | sed 's/-extension-/-/')
+            ./scripts/sign_extension.sh "$dir/gsheets.duckdb_extension" "dist/$name.duckdb_extension" \
+              scripts/extension_signing_public_key.pem
+            gzip -9 "dist/$name.duckdb_extension"
+          done
+          ls -l dist
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes
+          fi
+
+      # The github-pages environment only deploys from main, so redeploy from there
+      - name: Deploy extension repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy_docs.yml --ref main

@@ -25,6 +25,18 @@ LOAD gsheets;
 
 The latest version of [DuckDB](https://duckdb.org/docs/installation) (currently 1.4.0) is supported.
 
+### DuckDB 2.0 builds
+
+Builds for DuckDB 2.0 are published from [ebardelli/duckdb_gsheets](https://github.com/ebardelli/duckdb_gsheets) as a self-hosted, signed [extension repository](https://duckdb.org/docs/2.0/extensions/extension_repositories.html):
+
+```sql
+SET allow_extension_repositories = 'allowed';
+CREATE EXTENSION REPOSITORY gsheets_fork WITH PREFIX 'https://ebardelli.github.io/duckdb_gsheets/extensions';
+INSTALL AND LOAD gsheets FROM gsheets_fork;
+```
+
+`CREATE EXTENSION REPOSITORY` prints the fingerprint of the signing key it pinned. Check that it matches `FINGERPRINT_PLACEHOLDER`. The repository only needs to be created once; it persists across sessions. In later sessions, load the extension with `LOAD gsheets FROM gsheets_fork;`. To install a specific release, use `FORCE INSTALL gsheets FROM gsheets_fork VERSION 'vX.Y.Z';`.
+
 ## Usage
 
 ### Authenticate

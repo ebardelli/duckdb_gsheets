@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - '*'
+  workflow_dispatch:
 
 concurrency:
   group: deploy-docs-${{ github.ref }}
@@ -35,6 +36,23 @@ jobs:
       - name: Build static files
         run: npm run build --prefix docs
 
+      # Serve the signed binaries attached to the GitHub releases as a DuckDB extension repository
+      - name: Build extension repository
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          releases=()
+          for tag in $(gh release list --exclude-drafts --exclude-pre-releases --limit 100 \
+              --json tagName,createdAt --jq 'sort_by(.createdAt) | .[].tagName'); do
+            dir="$RUNNER_TEMP/releases/$tag"
+            mkdir -p "$dir"
+            gh release download "$tag" --pattern 'gsheets-*.duckdb_extension.gz' --dir "$dir" || true
+            releases+=("$tag=$dir")
+          done
+          python3 scripts/build_extension_repo.py --out docs/build/extensions \
+            --public-key scripts/extension_signing_public_key.pem "${releases[@]}"
+
       - name: Upload static files as artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -44,10 +62,11 @@ jobs:
   deploy:
     environment:
       name: github-pages
-      url: https://evidence-dev.github.io/duckdb_gsheets
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
