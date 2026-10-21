@@ -17,7 +17,7 @@ INSTALL gsheets FROM community;
 LOAD gsheets;
 ```
 
-The latest version of [DuckDB](https://duckdb.org/docs/installation) (currently 1.4.0) is supported.
+This version is compatible with [DuckDB](https://duckdb.org/docs/installation) 2.0.0.
 
 ### DuckDB 2.0 builds
 
