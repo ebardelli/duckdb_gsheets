@@ -36,6 +36,20 @@ jobs:
       - name: Build static files
         run: npm run build --prefix docs
 
+      - name: Get Pages base path
+        id: pages
+        uses: actions/configure-pages@v5
+
+      # Evidence's app.html links its icons from the site root, which 404s on a
+      # project site served from /<repo>/
+      - name: Prefix root-relative icon links with the base path
+        if: steps.pages.outputs.base_path != ''
+        env:
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: |
+          find docs/build -name '*.html' -exec sed -i -E \
+            "s#href=\"/(favicon\.ico|icon\.svg|apple-touch-icon\.png|manifest\.webmanifest)\"#href=\"${BASE_PATH}/\1\"#g" {} +
+
       # Serve the signed binaries attached to the GitHub releases as a DuckDB extension repository
       - name: Build extension repository
         if: github.ref == 'refs/heads/main'
