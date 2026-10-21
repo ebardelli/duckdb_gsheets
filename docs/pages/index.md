@@ -6,12 +6,6 @@ hide_title: true
 
 <h1 class="markdown flex items-center gap-2"><img src="icon-512.png" style="height: 1em;"/> DuckDB GSheets</h1>
 
-<Alert status="warning">
-
-**🚧 Experimental 🚧** Here be dragons
-
-</Alert>
-
 A DuckDB extension for reading and writing Google Sheets with SQL.
 
 _Note: This is a fork of the [DuckDB GSheets extension](https://duckdb-gsheets.com) ([source](https://github.com/evidence-dev/duckdb_gsheets)) maintained by [Evidence](https://evidence.dev). It publishes builds for DuckDB 2.0 until those are available upstream. This project is not affiliated with Google or DuckDB._
