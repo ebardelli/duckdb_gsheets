@@ -124,7 +124,7 @@ unique_ptr<FunctionData> ReadSheetBind(ClientContext &context, TableFunctionBind
 			} catch (const std::exception &e) {
 				throw InvalidInputException("Invalid value for 'use_varchar' parameter. Expected a boolean value.");
 			}
-		} else if (kv.first == "sheet") {
+		} else if (kv.first == "sheet" && !kv.second.IsNull()) {
 			// TODO: maybe factor this out to clean up this space
 			use_explicit_sheet_name = true;
 			sheet_name = kv.second.GetValue<string>();
@@ -152,7 +152,7 @@ unique_ptr<FunctionData> ReadSheetBind(ClientContext &context, TableFunctionBind
 			// Validate that sheet with name exists for better error messaging
 			auto sheet = client.Spreadsheets(spreadsheet_id).GetSheetByName(sheet_name);
 			sheet_id = std::to_string(sheet.properties.sheetId);
-		} else if (kv.first == "range") {
+		} else if (kv.first == "range" && !kv.second.IsNull()) {
 			sheet_range = kv.second.GetValue<string>();
 		}
 	}

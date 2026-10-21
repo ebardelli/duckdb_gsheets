@@ -53,10 +53,13 @@ static void LoadInternal(ExtensionLoader &loader) {
 
 	// Register read_gsheet table function
 	TableFunction read_gsheet_function("read_gsheet", {LogicalType::VARCHAR}, ReadSheetFunction, ReadSheetBind);
-	read_gsheet_function.named_parameters["header"] = LogicalType::BOOLEAN;
-	read_gsheet_function.named_parameters["sheet"] = LogicalType::VARCHAR;
-	read_gsheet_function.named_parameters["range"] = LogicalType::VARCHAR;
-	read_gsheet_function.named_parameters["all_varchar"] = LogicalType::BOOLEAN;
+	// Bind receives every keyword parameter, filled with its default when omitted;
+	// NULL marks "not provided" for sheet and range
+	read_gsheet_function.GetSignature()
+	    .AddKeywordOnly("header", LogicalType::BOOLEAN, Value::BOOLEAN(true))
+	    .AddKeywordOnly("sheet", LogicalType::VARCHAR, Value(LogicalType::VARCHAR))
+	    .AddKeywordOnly("range", LogicalType::VARCHAR, Value(LogicalType::VARCHAR))
+	    .AddKeywordOnly("all_varchar", LogicalType::BOOLEAN, Value::BOOLEAN(false));
 
 	GSheetCopyFunction gsheet_copy_function;
 

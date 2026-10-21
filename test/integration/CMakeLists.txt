@@ -45,3 +45,10 @@ link_extension_libraries(oauth_listener_tests "")
 if(WIN32)
   target_link_libraries(oauth_listener_tests ws2_32)
 endif()
+
+# httplib loads TLS roots from the macOS Keychain, matching the main extension
+# target's own framework linking.
+if(APPLE)
+  target_link_libraries(oauth_listener_tests "-framework Security"
+                        "-framework CoreFoundation")
+endif()
