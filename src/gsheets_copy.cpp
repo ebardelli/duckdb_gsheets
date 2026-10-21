@@ -28,8 +28,13 @@ GSheetCopyFunction::GSheetCopyFunction() : CopyFunction("gsheet") {
 }
 
 unique_ptr<FunctionData> GSheetCopyFunction::GSheetWriteBind(ClientContext &context, CopyFunctionBindInput &input,
-                                                             const vector<string> &names,
+                                                             const vector<Identifier> &names,
                                                              const vector<LogicalType> &sql_types) {
+	vector<string> column_names;
+	column_names.reserve(names.size());
+	for (auto &name : names) {
+		column_names.push_back(name.GetIdentifierName());
+	}
 
 	string file_path = input.info.file_path;
 	auto options = input.info.options;
@@ -47,8 +52,8 @@ unique_ptr<FunctionData> GSheetCopyFunction::GSheetWriteBind(ClientContext &cont
 		throw BinderException("Must provide sheet name");
 	}
 
-	return make_uniq<GSheetWriteBindData>(file_path, sql_types, names, sheet, range, overwrite_sheet, overwrite_range,
-	                                      create_if_not_exists, header);
+	return make_uniq<GSheetWriteBindData>(file_path, sql_types, column_names, sheet, range, overwrite_sheet,
+	                                      overwrite_range, create_if_not_exists, header);
 }
 
 unique_ptr<GlobalFunctionData> GSheetCopyFunction::GSheetWriteInitializeGlobal(ClientContext &context,
@@ -61,9 +66,15 @@ unique_ptr<GlobalFunctionData> GSheetCopyFunction::GSheetWriteInitializeGlobal(C
 	std::string sheet_name;
 	std::string sheet_range;
 
-	// Initialize client
+	// Initialize client. allow_interactive_reauth=false: this auth provider is
+	// stored in GlobalFunctionData and its GetAuthorizationHeader is called
+	// again from GSheetWriteSink on every batch, potentially from a different
+	// worker thread each time under a parallel COPY (PER_THREAD_OUTPUT) - see
+	// CreateAuthFromSecret's doc. An invalid_grant there still fails cleanly,
+	// same as before automatic reauth existed; only a single-threaded caller
+	// like ReadSheetBind gets the interactive reauth path.
 	auto http = sheets::CreateHttpClient(context);
-	auto auth = sheets::CreateAuthFromSecret(context, *http);
+	auto auth = sheets::CreateAuthFromSecret(context, *http, /*allow_interactive_reauth=*/false);
 	if (!auth) {
 		throw InvalidInputException("No 'gsheet' secret found...");
 	}
