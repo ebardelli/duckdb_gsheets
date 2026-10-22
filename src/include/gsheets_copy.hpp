@@ -79,6 +79,11 @@ public:
 
 	static void GSheetWriteSink(ExecutionContext &context, FunctionData &bind_data_p, GlobalFunctionData &gstate,
 	                            LocalFunctionData &lstate, DataChunk &input);
+
+	static void GSheetWriteCombine(ExecutionContext &context, FunctionData &bind_data, GlobalFunctionData &gstate,
+	                               LocalFunctionData &lstate);
+
+	static void GSheetWriteFinalize(ClientContext &context, FunctionData &bind_data, GlobalFunctionData &gstate);
 };
 
 } // namespace duckdb

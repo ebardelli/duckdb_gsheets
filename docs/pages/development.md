@@ -73,6 +73,14 @@ make test_unit
 make test_oauth_listener
 ```
 
+### COPY TO tests
+
+`test/integration/test_copy_function.cpp` runs `COPY ... TO` through DuckDB's own execution paths (ordered, batched, parallel and empty) with the `gsheet_write` callback set, swapping only the callbacks that call the Sheets API for stubs that record the rows. A callback the engine requires but the copy function leaves unset fails here, without credentials or network access:
+
+```sh
+make test_copy_function
+```
+
 ### SQL tests
 
 SQL tests run against the real Google Sheets API and require credentials. There are two ways to run them:
@@ -117,7 +125,7 @@ graph LR
 ```
 
 - **Unit tests** — always run, no credentials needed
-- **OAuth listener tests** — always run in parallel with SQL tests, no credentials needed (builds the full extension - see `make test_oauth_listener`)
+- **OAuth listener tests** — always run in parallel with SQL tests, no credentials needed (builds the full extension - see `make test_oauth_listener`); the same job runs the COPY TO tests (`make test_copy_function`)
 - **SQL tests** — require `GSHEETS_KEY_FILE_JSON` repo secret; skip gracefully on fork PRs without credentials
 - **Distribution builds** — only start after all test stages pass
 

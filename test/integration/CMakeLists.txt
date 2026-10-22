@@ -52,3 +52,25 @@ if(APPLE)
   target_link_libraries(oauth_listener_tests "-framework Security"
                         "-framework CoreFoundation")
 endif()
+
+# COPY TO tests: drive the gsheet_write callback set through DuckDB's own
+# COPY execution paths, so a callback the engine requires but the copy
+# function leaves unset fails here rather than only in the credentialed SQL
+# tests. Links the static extension library for gsheets_copy.cpp and its
+# dependencies; no credentials or network access needed.
+add_executable(
+  copy_function_tests ${CMAKE_CURRENT_SOURCE_DIR}/../unit/test_main.cpp
+                      ${CMAKE_CURRENT_SOURCE_DIR}/test_copy_function.cpp)
+
+target_link_libraries(copy_function_tests gsheets_extension duckdb_static
+                      OpenSSL::SSL OpenSSL::Crypto)
+link_extension_libraries(copy_function_tests "")
+
+if(WIN32)
+  target_link_libraries(copy_function_tests ws2_32)
+endif()
+
+if(APPLE)
+  target_link_libraries(copy_function_tests "-framework Security"
+                        "-framework CoreFoundation")
+endif()

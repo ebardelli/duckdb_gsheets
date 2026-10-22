@@ -8,7 +8,7 @@ EXT_CONFIG=${PROJ_DIR}extension_config.cmake
 include extension-ci-tools/makefiles/duckdb_extension.Makefile
 
 # Custom test targets
-.PHONY: test_unit test_unit_build test_oauth_listener test_oauth_listener_debug test_sql test_all test_all_debug
+.PHONY: test_unit test_unit_build test_oauth_listener test_oauth_listener_debug test_copy_function test_copy_function_debug test_sql test_all test_all_debug
 
 # Build unit tests (standalone, doesn't require full DuckDB build)
 test_unit_build:
@@ -32,15 +32,24 @@ test_oauth_listener: release
 test_oauth_listener_debug: debug
 	./build/debug/extension/gsheets/test/integration/oauth_listener_tests
 
+# Run the COPY TO Catch2 tests, which drive the gsheet_write callbacks through
+# DuckDB's own COPY execution paths with the Sheets API calls stubbed out. Like
+# test_oauth_listener, they link the full extension build.
+test_copy_function: release
+	./build/release/extension/gsheets/test/integration/copy_function_tests
+
+test_copy_function_debug: debug
+	./build/debug/extension/gsheets/test/integration/copy_function_tests
+
 # SQL tests (SQLLogicTests via DuckDB test runner)
 test_sql: test_release
 
 test_sql_debug: test_debug
 
-# Run all tests (unit + OAuth listener + SQL)
-test_all: test_unit test_oauth_listener test_sql
+# Run all tests (unit + OAuth listener + COPY TO + SQL)
+test_all: test_unit test_oauth_listener test_copy_function test_sql
 
-test_all_debug: test_unit test_oauth_listener_debug test_sql_debug
+test_all_debug: test_unit test_oauth_listener_debug test_copy_function_debug test_sql_debug
 
 # Clean unit test build
 clean_unit_tests:

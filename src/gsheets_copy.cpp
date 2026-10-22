@@ -54,6 +54,9 @@ GSheetCopyFunction::GSheetCopyFunction() : CopyFunction(WRITE_FORMAT) {
 	copy_to_initialize_global = GSheetWriteInitializeGlobal;
 	copy_to_initialize_local = GSheetWriteInitializeLocal;
 	copy_to_sink = GSheetWriteSink;
+	// Rows are appended in sink, but DuckDB 2.0's batched and file lifecycle paths require these callbacks
+	copy_to_combine = GSheetWriteCombine;
+	copy_to_finalize = GSheetWriteFinalize;
 }
 
 unique_ptr<FunctionData> GSheetCopyFunction::GSheetWriteBind(ClientContext &context, CopyFunctionBindInput &input,
@@ -158,6 +161,14 @@ unique_ptr<GlobalFunctionData> GSheetCopyFunction::GSheetWriteInitializeGlobal(C
 unique_ptr<LocalFunctionData> GSheetCopyFunction::GSheetWriteInitializeLocal(ExecutionContext &context,
                                                                              FunctionData &bind_data_p) {
 	return make_uniq<LocalFunctionData>();
+}
+
+void GSheetCopyFunction::GSheetWriteCombine(ExecutionContext &context, FunctionData &bind_data,
+                                            GlobalFunctionData &gstate, LocalFunctionData &lstate) {
+}
+
+void GSheetCopyFunction::GSheetWriteFinalize(ClientContext &context, FunctionData &bind_data,
+                                             GlobalFunctionData &gstate) {
 }
 
 void GSheetCopyFunction::GSheetWriteSink(ExecutionContext &context, FunctionData &bind_data_p,
