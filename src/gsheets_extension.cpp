@@ -65,6 +65,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 
 	loader.RegisterFunction(read_gsheet_function);
 	loader.RegisterFunction(gsheet_copy_function);
+	loader.RegisterFunction(GSheetCopyFunction::GetPlanFunction());
 	CreateGsheetSecretFunctions::Register(loader);
 	auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
 

@@ -5,6 +5,8 @@
 #include "duckdb/common/file_system.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/types/value.hpp"
+#include "duckdb/parser/statement/copy_statement.hpp"
+#include "duckdb/planner/binder.hpp"
 
 #include "gsheets_copy.hpp"
 #include "gsheets_utils.hpp"
@@ -20,7 +22,34 @@
 
 namespace duckdb {
 
-GSheetCopyFunction::GSheetCopyFunction() : CopyFunction("gsheet") {
+// DuckDB checks every COPY TO target against the filesystem before handing it to the copy function, and a
+// docs.google.com URL is claimed by httpfs, which cannot answer those checks. Move the URL's gid and range into
+// options and hand core the bare spreadsheet ID instead, which it treats as a plain (nonexistent) local path.
+BoundStatement GSheetCopyFunction::GSheetCopyPlan(Binder &binder, CopyStatement &stmt) {
+	auto &copy_info = *stmt.info;
+	auto &file_path = copy_info.file_path;
+
+	auto gid = extract_sheet_id(file_path);
+	if (!gid.empty() && copy_info.options.find(Identifier("gid")) == copy_info.options.end()) {
+		copy_info.options[Identifier("gid")] = {Value(gid)};
+	}
+	auto range = extract_sheet_range(file_path);
+	if (!range.empty() && copy_info.options.find(Identifier("range")) == copy_info.options.end()) {
+		copy_info.options[Identifier("range")] = {Value(range)};
+	}
+	file_path = extract_spreadsheet_id(file_path);
+
+	copy_info.format = WRITE_FORMAT;
+	return binder.Bind(stmt);
+}
+
+CopyFunction GSheetCopyFunction::GetPlanFunction() {
+	CopyFunction function("gsheet");
+	function.plan = GSheetCopyPlan;
+	return function;
+}
+
+GSheetCopyFunction::GSheetCopyFunction() : CopyFunction(WRITE_FORMAT) {
 	copy_to_bind = GSheetWriteBind;
 	copy_to_initialize_global = GSheetWriteInitializeGlobal;
 	copy_to_initialize_local = GSheetWriteInitializeLocal;
@@ -40,6 +69,7 @@ unique_ptr<FunctionData> GSheetCopyFunction::GSheetWriteBind(ClientContext &cont
 	auto options = input.info.options;
 
 	auto sheet = duckdb::sheets::GetStringOption(options, "sheet");
+	auto gid = duckdb::sheets::GetStringOption(options, "gid");
 	auto range = duckdb::sheets::GetStringOption(options, "range");
 	bool overwrite_sheet = duckdb::sheets::GetBoolOption(options, "overwrite_sheet", true).first;
 	bool overwrite_range = duckdb::sheets::GetBoolOption(options, "overwrite_range", false).first;
@@ -52,7 +82,7 @@ unique_ptr<FunctionData> GSheetCopyFunction::GSheetWriteBind(ClientContext &cont
 		throw BinderException("Must provide sheet name");
 	}
 
-	return make_uniq<GSheetWriteBindData>(file_path, sql_types, column_names, sheet, range, overwrite_sheet,
+	return make_uniq<GSheetWriteBindData>(file_path, sql_types, column_names, sheet, gid, range, overwrite_sheet,
 	                                      overwrite_range, create_if_not_exists, header);
 }
 
@@ -62,9 +92,8 @@ unique_ptr<GlobalFunctionData> GSheetCopyFunction::GSheetWriteInitializeGlobal(C
 	auto options = bind_data.Cast<GSheetWriteBindData>().options;
 
 	std::string spreadsheet_id = extract_spreadsheet_id(file_path);
-	std::string sheet_id = extract_sheet_id(file_path);
 	std::string sheet_name;
-	std::string sheet_range;
+	std::string sheet_range = options.range;
 
 	// Initialize client. allow_interactive_reauth=false: this auth provider is
 	// stored in GlobalFunctionData and its GetAuthorizationHeader is called
@@ -84,7 +113,7 @@ unique_ptr<GlobalFunctionData> GSheetCopyFunction::GSheetWriteInitializeGlobal(C
 	if (!options.sheet.empty()) {
 		sheet_name = options.sheet;
 	} else {
-		auto sheet = client.Spreadsheets(spreadsheet_id).GetSheetById(sheet_id);
+		auto sheet = client.Spreadsheets(spreadsheet_id).GetSheetById(options.gid);
 		sheet_name = sheet.properties.title;
 	}
 
@@ -96,12 +125,6 @@ unique_ptr<GlobalFunctionData> GSheetCopyFunction::GSheetWriteInitializeGlobal(C
 		} catch (sheets::SheetNotFoundException &_) {
 			client.Spreadsheets(spreadsheet_id).CreateSheet(sheet_name);
 		}
-	}
-
-	if (!options.range.empty()) {
-		sheet_range = options.range;
-	} else {
-		sheet_range = extract_sheet_range(file_path);
 	}
 
 	std::string encoded_sheet_name = url_encode(sheet_name);
@@ -142,11 +165,9 @@ void GSheetCopyFunction::GSheetWriteSink(ExecutionContext &context, FunctionData
 	input.Flatten();
 	auto &gstate = gstate_p.Cast<GSheetCopyGlobalState>();
 
-	std::string file = bind_data_p.Cast<GSheetWriteBindData>().files[0];
 	auto options = bind_data_p.Cast<GSheetWriteBindData>().options;
-	std::string sheet_id = extract_sheet_id(file);
 	std::string sheet_name;
-	std::string sheet_range;
+	std::string sheet_range = options.range;
 
 	auto client = sheets::GoogleSheetsClient(*gstate.http, *gstate.auth);
 
@@ -154,14 +175,8 @@ void GSheetCopyFunction::GSheetWriteSink(ExecutionContext &context, FunctionData
 	if (!options.sheet.empty()) {
 		sheet_name = options.sheet;
 	} else {
-		auto sheet = client.Spreadsheets(gstate.spreadsheet_id).GetSheetById(sheet_id);
+		auto sheet = client.Spreadsheets(gstate.spreadsheet_id).GetSheetById(options.gid);
 		sheet_name = sheet.properties.title;
-	}
-
-	if (!options.range.empty()) {
-		sheet_range = options.range;
-	} else {
-		sheet_range = extract_sheet_range(file);
 	}
 
 	std::string encoded_sheet_name = url_encode(sheet_name);

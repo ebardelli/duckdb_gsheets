@@ -26,6 +26,7 @@ public:
 struct GSheetWriteOptions {
 	vector<string> name_list;
 	std::string sheet;
+	std::string gid;
 	std::string range;
 	bool overwrite_sheet;
 	bool overwrite_range;
@@ -39,12 +40,13 @@ struct GSheetWriteBindData : public TableFunctionData {
 	vector<LogicalType> sql_types;
 
 	GSheetWriteBindData(string file_path, vector<LogicalType> sql_types, vector<string> names, std::string sheet,
-	                    std::string range, bool overwrite_sheet, bool overwrite_range, bool create_if_not_exists,
-	                    bool header)
+	                    std::string gid, std::string range, bool overwrite_sheet, bool overwrite_range,
+	                    bool create_if_not_exists, bool header)
 	    : sql_types(std::move(sql_types)) {
 		files.push_back(std::move(file_path));
 		options.name_list = std::move(names);
 		options.sheet = std::move(sheet);
+		options.gid = std::move(gid);
 		options.range = std::move(range);
 		options.overwrite_sheet = overwrite_sheet;
 		options.overwrite_range = overwrite_range;
@@ -55,7 +57,15 @@ struct GSheetWriteBindData : public TableFunctionData {
 
 class GSheetCopyFunction : public CopyFunction {
 public:
+	//! Name of the copy function that does the writing; "gsheet" rewrites COPY statements to it
+	static constexpr const char *WRITE_FORMAT = "gsheet_write";
+
 	GSheetCopyFunction();
+
+	//! The user-facing "gsheet" copy function, which only rewrites the statement for the writer
+	static CopyFunction GetPlanFunction();
+
+	static BoundStatement GSheetCopyPlan(Binder &binder, CopyStatement &stmt);
 
 	static unique_ptr<FunctionData> GSheetWriteBind(ClientContext &context, CopyFunctionBindInput &input,
 	                                                const vector<Identifier> &names,
