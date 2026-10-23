@@ -56,6 +56,17 @@ CREATE SECRET (
 -- OAuth app with the default browser login above, without gaining
 -- re-authentication.
 
+-- OR, on a machine with no browser (e.g. a scheduled pipeline), pass in a
+-- refresh token you already have, together with the OAuth client it was
+-- issued to. No login happens. (See "Pipelines and headless machines" below.)
+CREATE SECRET (
+    TYPE gsheet,
+    PROVIDER oauth,
+    CLIENT_ID '<your_oauth_client_id>',
+    CLIENT_SECRET '<your_oauth_client_secret>',
+    REFRESH_TOKEN '<your_refresh_token>'
+);
+
 
 -- OR create a secret with your Google API access token (boring, see below guide)
 CREATE SECRET (
@@ -100,14 +111,65 @@ CREATE SECRET (
 | none | Implicit grant, built-in OAuth app | Access token only. It expires after about an hour, and you sign in again. |
 | `CLIENT_ID` | Implicit grant, your OAuth app | Same as above, using your app. |
 | `CLIENT_ID` + `CLIENT_SECRET` | Authorization code with PKCE, your OAuth app | Access token **and** refresh token. Expired access tokens are renewed in the background without a browser. |
+| `CLIENT_ID` + `CLIENT_SECRET` + `REFRESH_TOKEN` | No browser login, your OAuth app | Uses the refresh token you pass in. Access tokens are renewed in the background. If the refresh token is revoked, queries fail with an error. |
 
-With a refresh token, the extension renews the access token about a minute before it expires. If Google revokes the refresh token (for example, you remove the app's access in your Google account, or the token goes unused for a long time), the next `read_gsheet` call opens the browser login again and saves the new tokens back to the secret. This also updates a `PERSISTENT` secret. `COPY ... TO` never prompts and fails with an error instead; run a `read_gsheet` query or re-create the secret to sign in again.
+With a refresh token, the extension renews the access token about a minute before it expires. If Google revokes the refresh token (for example, you remove the app's access in your Google account, or the token goes unused for a long time), the next `read_gsheet` call opens the browser login again and saves the new tokens back to the secret. This also updates a `PERSISTENT` secret. `COPY ... TO` never prompts and fails with an error instead; run a `read_gsheet` query or re-create the secret to sign in again. A secret created with `REFRESH_TOKEN` never opens the browser either: every query fails with an error until you create the secret again with a new refresh token.
 
 Tokens, the refresh token and the client secret are redacted when you list secrets. A `PERSISTENT` secret is stored on disk in DuckDB's secret directory, so treat that directory as sensitive.
 
 If your own OAuth app's publishing status in Google Cloud Console is still "Testing", Google expires its refresh tokens after 7 days, so you'll be asked to sign in about once a week. Publish the app to avoid this.
 
-For a non-interactive setup such as a scheduled pipeline, use a service account (`key_file` provider) instead.
+For a non-interactive setup such as a scheduled pipeline, see [Pipelines and headless machines](#pipelines-and-headless-machines) below. A service account (`key_file` provider) also works, but every sheet must then be shared with the service account's email address.
+
+### Pipelines and headless machines
+
+A pipeline can read and write sheets as a real Google user, with no browser, by passing a refresh token to `CREATE SECRET`. Sheets then only need to be shared with that user. You sign in once on a desktop to get the refresh token:
+
+1. **Create an OAuth client.** In Google Cloud Console, create an OAuth client of type *Desktop app*. On the OAuth consent screen, publish the app, or set its user type to *Internal* if your Google Workspace organization allows it. While the app's publishing status is "Testing", Google expires its refresh tokens after 7 days.
+
+2. **Sign in once on a desktop.** Start the DuckDB CLI with `-unredacted`, which allows secrets to be printed. This can only be set when DuckDB starts, not with `SET` later. Then create a secret with your client ID and secret and sign in in the browser:
+
+   ```sh
+   duckdb -unredacted
+   ```
+
+   ```sql
+   CREATE SECRET gsheet_login (
+       TYPE gsheet,
+       PROVIDER oauth,
+       CLIENT_ID '<your_oauth_client_id>',
+       CLIENT_SECRET '<your_oauth_client_secret>'
+   );
+   ```
+
+3. **Read the refresh token back.** In the same session:
+
+   ```sql
+   SELECT regexp_extract(secret_string, 'refresh_token=([^;]*)', 1) AS refresh_token
+   FROM duckdb_secrets(redact := false)
+   WHERE name = 'gsheet_login';
+   ```
+
+   Without `-unredacted`, this fails with `Displaying unredacted secrets is disabled`.
+
+4. **Use it in the pipeline.** Store the client ID, client secret and refresh token in your pipeline's secret store, and create the secret at the start of each run:
+
+   ```sql
+   CREATE SECRET (
+       TYPE gsheet,
+       PROVIDER oauth,
+       CLIENT_ID '<your_oauth_client_id>',
+       CLIENT_SECRET '<your_oauth_client_secret>',
+       REFRESH_TOKEN '<your_refresh_token>'
+   );
+   ```
+
+   `CREATE SECRET` doesn't contact Google. The refresh token is first used, and checked, by the first query that reads or writes a sheet.
+
+Keep in mind:
+
+- Every run reads and writes as the user who signed in. If that account is suspended, or its password changes (under some Workspace policies, this revokes refresh tokens), the pipeline fails until someone signs in again and updates the stored refresh token. A dedicated account for the pipeline avoids tying it to one person.
+- The refresh token can access every sheet that user can open, not just the ones the pipeline uses. Treat it like a password. The extension only ever asks for the Sheets scope (`https://www.googleapis.com/auth/spreadsheets`).
 
 ### HTTP Proxy
 
