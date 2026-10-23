@@ -68,6 +68,29 @@ TEST_CASE("OAuthAuth caches the access token", "[auth]") {
 	REQUIRE(mockHttp.GetRecordedRequests().size() == 1);
 }
 
+TEST_CASE("OAuthAuth with no access token yet calls the token endpoint exactly once", "[auth]") {
+	// A secret created from a passed-in refresh_token has no access token at
+	// all: the first GetAuthorizationHeader mints one, and later calls reuse it.
+	duckdb::sheets::MockHttpClient mockHttp;
+
+	duckdb::sheets::HttpResponse tokenResponse;
+	tokenResponse.statusCode = 200;
+	tokenResponse.body = R"({"access_token": "first-token", "expires_in": 3600})";
+	mockHttp.AddResponse(tokenResponse);
+
+	duckdb::sheets::OAuthAuth auth(mockHttp, "passed-in-refresh-token", "client-id", "client-secret");
+	REQUIRE(mockHttp.GetRecordedRequests().empty());
+
+	REQUIRE(auth.GetAuthorizationHeader() == "Bearer first-token");
+	REQUIRE(auth.GetAuthorizationHeader() == "Bearer first-token");
+	REQUIRE(auth.GetAuthorizationHeader() == "Bearer first-token");
+
+	auto &requests = mockHttp.GetRecordedRequests();
+	REQUIRE(requests.size() == 1);
+	REQUIRE(requests[0].url == "https://oauth2.googleapis.com/token");
+	REQUIRE(requests[0].body.find("refresh_token=passed-in-refresh-token") != std::string::npos);
+}
+
 TEST_CASE("OAuthAuth throws on HTTP error", "[auth]") {
 	duckdb::sheets::MockHttpClient mockHttp;
 

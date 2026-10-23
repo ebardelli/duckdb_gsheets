@@ -81,6 +81,14 @@ make test_oauth_listener
 make test_copy_function
 ```
 
+### Auth factory tests
+
+`test/integration/test_auth_factory.cpp` creates real `gsheet` secrets and builds the auth provider from them with `CreateAuthFromSecret`, with a mock standing in for Google's token endpoint. It checks, for example, that a secret given a `REFRESH_TOKEN` fails with an error when that token is revoked instead of starting the browser login. No credentials or network access needed:
+
+```sh
+make test_auth_factory
+```
+
 ### SQL tests
 
 SQL tests run against the real Google Sheets API and require credentials. There are two ways to run them:
@@ -125,7 +133,7 @@ graph LR
 ```
 
 - **Unit tests** — always run, no credentials needed
-- **OAuth listener tests** — always run in parallel with SQL tests, no credentials needed (builds the full extension - see `make test_oauth_listener`); the same job runs the COPY TO tests (`make test_copy_function`)
+- **OAuth listener tests** — always run in parallel with SQL tests, no credentials needed (builds the full extension - see `make test_oauth_listener`); the same job runs the COPY TO tests (`make test_copy_function`) and the auth factory tests (`make test_auth_factory`)
 - **SQL tests** — require `GSHEETS_KEY_FILE_JSON` repo secret; skip gracefully on fork PRs without credentials
 - **Distribution builds** — only start after all test stages pass
 

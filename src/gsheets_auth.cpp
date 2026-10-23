@@ -53,8 +53,8 @@ static bool IsStdinInteractive() {
 // their own via the `client_id` secret parameter (see
 // CreateGsheetSecretFromOAuth). No client_secret is embedded for it: it
 // only ever drives the implicit-grant flow below, which needs none. Callers
-// who want a refresh_token must bring their own client_id *and*
-// client_secret.
+// who want a refresh_token - or who pass in one they already have - must
+// bring their own client_id *and* client_secret.
 static const std::string kDefaultOAuthClientId =
     "793766532675-rehqgocfn88h0nl88322ht6d1i12kl4e.apps.googleusercontent.com";
 
@@ -199,14 +199,30 @@ static unique_ptr<BaseSecret> CreateGsheetSecretFromOAuth(ClientContext &context
 
 	std::string client_id = duckdb::sheets::GetStringOption(input.options, "client_id");
 	std::string client_secret = duckdb::sheets::GetStringOption(input.options, "client_secret");
+	std::string refresh_token = duckdb::sheets::GetStringOption(input.options, "refresh_token");
 
+	if (!refresh_token.empty() && (client_id.empty() || client_secret.empty())) {
+		throw BinderException("refresh_token requires both client_id and client_secret to also be provided");
+	}
 	if (!client_secret.empty() && client_id.empty()) {
 		throw BinderException("client_secret requires client_id to also be provided");
 	}
 
 	std::string effective_client_id = client_id.empty() ? kDefaultOAuthClientId : client_id;
 
-	if (client_secret.empty()) {
+	if (!refresh_token.empty()) {
+		// A refresh_token obtained elsewhere (e.g. from an earlier browser
+		// login on a desktop): no login at all, so this works headless. No
+		// token is stored - OAuthAuth mints the first access token on the
+		// first API call, the same way key_file secrets are only checked
+		// lazily. Marked non-interactive so a revoked refresh_token fails
+		// with an error instead of reopening the browser login (see
+		// CreateAuthFromSecret).
+		result->secret_map["refresh_token"] = refresh_token;
+		result->secret_map["client_id"] = effective_client_id;
+		result->secret_map["client_secret"] = client_secret;
+		result->secret_map["interactive_reauth"] = Value::BOOLEAN(false);
+	} else if (client_secret.empty()) {
 		// Default flow, optionally with a caller-supplied client_id (i.e.
 		// "bring your own OAuth app"): implicit grant, no refresh_token -
 		// unchanged from before these parameters existed.
@@ -297,9 +313,12 @@ void CreateGsheetSecretFunctions::Register(ExtensionLoader &loader) {
 	// implicit-grant flow (no refresh_token) with that app instead of the
 	// built-in one; client_id + client_secret together switch to the
 	// authorization-code + PKCE flow and capture a refresh_token - see
-	// CreateGsheetSecretFromOAuth.
+	// CreateGsheetSecretFromOAuth. Adding refresh_token (which requires both)
+	// skips the login entirely and uses that refresh_token as-is - for
+	// headless use.
 	oauth_function.named_parameters["client_id"] = LogicalType::VARCHAR;
 	oauth_function.named_parameters["client_secret"] = LogicalType::VARCHAR;
+	oauth_function.named_parameters["refresh_token"] = LogicalType::VARCHAR;
 	RegisterCommonSecretParameters(oauth_function);
 
 	// Register the key_file secret provider

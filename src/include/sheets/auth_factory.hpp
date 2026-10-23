@@ -13,7 +13,9 @@ namespace sheets {
 //
 // `allow_interactive_reauth` controls whether an `oauth` secret with a
 // refresh_token gets a reauth callback wired up (see OAuthAuth) that reopens
-// the browser to recover from a revoked/expired refresh_token. Only pass
+// the browser to recover from a revoked/expired refresh_token. A secret
+// created with `interactive_reauth` false (one given a refresh_token
+// directly) never gets one, whatever this is set to. Only pass
 // true from a call site where the returned IAuthProvider's
 // GetAuthorizationHeader is guaranteed to run on one thread at a time across
 // its whole lifetime - e.g. built fresh per query bind. Pass false for a

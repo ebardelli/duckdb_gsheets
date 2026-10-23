@@ -74,3 +74,23 @@ if(APPLE)
   target_link_libraries(copy_function_tests "-framework Security"
                         "-framework CoreFoundation")
 endif()
+
+# CreateAuthFromSecret tests: build the auth provider from real `gsheet`
+# secrets, with a MockHttpClient standing in for Google's token endpoint. No
+# credentials or network access needed.
+add_executable(
+  auth_factory_tests ${CMAKE_CURRENT_SOURCE_DIR}/../unit/test_main.cpp
+                     ${CMAKE_CURRENT_SOURCE_DIR}/test_auth_factory.cpp)
+
+target_link_libraries(auth_factory_tests gsheets_extension duckdb_static
+                      OpenSSL::SSL OpenSSL::Crypto)
+link_extension_libraries(auth_factory_tests "")
+
+if(WIN32)
+  target_link_libraries(auth_factory_tests ws2_32)
+endif()
+
+if(APPLE)
+  target_link_libraries(auth_factory_tests "-framework Security"
+                        "-framework CoreFoundation")
+endif()

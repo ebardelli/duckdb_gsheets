@@ -31,9 +31,10 @@ namespace sheets {
 // `allow_interactive_reauth` must be false for that call site.
 using OAuthReauthCallback = std::function<OAuthTokenResponse()>;
 
-// Auto-refreshing OAuth provider for `oauth` secrets that went through the
-// authorization-code + PKCE flow (i.e. were created with both client_id and
-// client_secret - see CreateGsheetSecretFromOAuth). Holds the long-lived
+// Auto-refreshing OAuth provider for `oauth` secrets that carry a
+// refresh_token (i.e. were created with both client_id and client_secret,
+// either through the authorization-code + PKCE flow or with a refresh_token
+// passed in directly - see CreateGsheetSecretFromOAuth). Holds the long-lived
 // refresh_token and mints short-lived access tokens from it on demand,
 // mirroring how ServiceAccountAuth turns a service account's private key
 // into access tokens - see ServiceAccountAuth for the equivalent JWT-bearer
