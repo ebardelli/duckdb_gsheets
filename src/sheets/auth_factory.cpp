@@ -94,17 +94,13 @@ std::unique_ptr<IAuthProvider> CreateAuthFromSecret(ClientContext &ctx, IHttpCli
 			}
 			return make_uniq<ServiceAccountAuth>(http, emailValue.ToString(), keyValue.ToString());
 		} else {
-			Value tokenValue;
-			if (!gsheet_secret->TryGetValue("token", tokenValue)) {
-				throw InvalidInputException("'token' not found in gsheet secret");
-			}
-
-			// Only `oauth` secrets created via the authorization-code + PKCE
-			// path (client_id and client_secret both supplied at CREATE
-			// SECRET time) carry a refresh_token - everything else
-			// (access_token secrets, and oauth secrets created via the
-			// default/implicit-grant flow) keeps using the static
-			// BearerTokenAuth, exactly as before.
+			// Only `oauth` secrets created with both client_id and
+			// client_secret carry a refresh_token - either captured by the
+			// authorization-code + PKCE login, or passed in directly via
+			// refresh_token (in which case there's no token at all until
+			// OAuthAuth mints one). Everything else (access_token secrets,
+			// and oauth secrets created via the default/implicit-grant flow)
+			// keeps using the static BearerTokenAuth, exactly as before.
 			Value refreshValue;
 			if (provider == "oauth" && gsheet_secret->TryGetValue("refresh_token", refreshValue)) {
 				Value clientIdValue, clientSecretValue;
@@ -114,13 +110,25 @@ std::unique_ptr<IAuthProvider> CreateAuthFromSecret(ClientContext &ctx, IHttpCli
 				if (!gsheet_secret->TryGetValue("client_secret", clientSecretValue)) {
 					throw InvalidInputException("'client_secret' not found in gsheet secret with a refresh_token");
 				}
+				// Secrets created from a passed-in refresh_token opt out of
+				// the browser reauth: they're almost always used headless,
+				// where a login would just hang until it times out.
+				Value interactiveValue;
+				bool secret_allows_reauth = !gsheet_secret->TryGetValue("interactive_reauth", interactiveValue) ||
+				                            interactiveValue.IsNull() ||
+				                            interactiveValue.DefaultCastAs(LogicalType::BOOLEAN).GetValue<bool>();
 				OAuthReauthCallback reauth = nullptr;
-				if (allow_interactive_reauth) {
+				if (allow_interactive_reauth && secret_allows_reauth) {
 					reauth = BuildReauthCallback(ctx, http, *match.secret_entry, clientIdValue.ToString(),
 					                             clientSecretValue.ToString());
 				}
 				return make_uniq<OAuthAuth>(http, refreshValue.ToString(), clientIdValue.ToString(),
 				                            clientSecretValue.ToString(), std::move(reauth));
+			}
+
+			Value tokenValue;
+			if (!gsheet_secret->TryGetValue("token", tokenValue)) {
+				throw InvalidInputException("'token' not found in gsheet secret");
 			}
 			return make_uniq<BearerTokenAuth>(tokenValue.ToString());
 		}

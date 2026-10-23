@@ -40,3 +40,9 @@ jobs:
         env:
           GEN: ninja
           EXT_FLAGS: -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Run auth factory tests
+        run: make test_auth_factory
+        env:
+          GEN: ninja
+          EXT_FLAGS: -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
