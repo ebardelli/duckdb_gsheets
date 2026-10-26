@@ -4,6 +4,12 @@ PROJ_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 EXT_NAME=gsheets
 EXT_CONFIG=${PROJ_DIR}extension_config.cmake
 
+# Since 2.0, DuckDB no longer derives its version from git tags: without an
+# explicit version a build reports v2.0.0-devNNNNN, so it can't install
+# extensions (e.g. httpfs) from the official repository. Default to the
+# submodule's tag when it sits exactly on one; CI can still override it.
+OVERRIDE_GIT_DESCRIBE ?= $(shell git -C ${PROJ_DIR}duckdb describe --tags --exact-match 2>/dev/null)
+
 # Include the Makefile from extension-ci-tools
 include extension-ci-tools/makefiles/duckdb_extension.Makefile
 
