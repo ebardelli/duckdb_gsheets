@@ -115,8 +115,18 @@ unique_ptr<GlobalFunctionData> GSheetCopyFunction::GSheetWriteInitializeGlobal(C
 	// Prefer a sheet or range that is specified as a parameter over one on the query string
 	if (!options.sheet.empty()) {
 		sheet_name = options.sheet;
+	} else if (!options.gid.empty()) {
+		try {
+			auto sheet = client.Spreadsheets(spreadsheet_id).GetSheetById(options.gid);
+			sheet_name = sheet.properties.title;
+		} catch (const std::invalid_argument &e) {
+			throw InvalidInputException("Cannot convert sheet ID " + options.gid + " to integer: " + e.what());
+		} catch (const std::out_of_range &e) {
+			throw InvalidInputException("Cannot convert sheet ID " + options.gid + " to integer: " + e.what());
+		}
 	} else {
-		auto sheet = client.Spreadsheets(spreadsheet_id).GetSheetById(options.gid);
+		// Fallback to first sheet by index, same as read_gsheet
+		auto sheet = client.Spreadsheets(spreadsheet_id).GetSheetByIndex(0);
 		sheet_name = sheet.properties.title;
 	}
 
@@ -155,7 +165,7 @@ unique_ptr<GlobalFunctionData> GSheetCopyFunction::GSheetWriteInitializeGlobal(C
 		client.Spreadsheets(spreadsheet_id).Values().Append(sheets::A1Range(range_str), header_values);
 	}
 	return make_uniq<GSheetCopyGlobalState>(context, std::move(http), std::move(auth), spreadsheet_id,
-	                                        encoded_sheet_name);
+	                                        sheet_name);
 }
 
 unique_ptr<LocalFunctionData> GSheetCopyFunction::GSheetWriteInitializeLocal(ExecutionContext &context,
@@ -177,18 +187,11 @@ void GSheetCopyFunction::GSheetWriteSink(ExecutionContext &context, FunctionData
 	auto &gstate = gstate_p.Cast<GSheetCopyGlobalState>();
 
 	auto options = bind_data_p.Cast<GSheetWriteBindData>().options;
-	std::string sheet_name;
+	// Resolved once in GSheetWriteInitializeGlobal
+	const std::string &sheet_name = gstate.sheet_name;
 	std::string sheet_range = options.range;
 
 	auto client = sheets::GoogleSheetsClient(*gstate.http, *gstate.auth);
-
-	// Prefer a sheet or range that is specified as a parameter over one on the query string
-	if (!options.sheet.empty()) {
-		sheet_name = options.sheet;
-	} else {
-		auto sheet = client.Spreadsheets(gstate.spreadsheet_id).GetSheetById(options.gid);
-		sheet_name = sheet.properties.title;
-	}
 
 	std::string encoded_sheet_name = url_encode(sheet_name);
 
