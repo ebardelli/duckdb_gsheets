@@ -51,6 +51,15 @@ set(EXTENSION_SOURCES
     src/utils/version.cpp
     ${OAUTH_LISTENER_SOURCES})
 
+# Browsers have no sockets, so DuckDB-WASM builds leave out our own httplib
+# client (requests go through DuckDB-WASM's HTTPUtil instead) and the local
+# OAuth redirect listener (browser logins aren't supported there - see
+# gsheets_auth.cpp).
+if(EMSCRIPTEN)
+  list(REMOVE_ITEM EXTENSION_SOURCES src/sheets/transport/httplib_client.cpp
+       ${CMAKE_CURRENT_SOURCE_DIR}/src/sheets/auth/oauth_listener.cpp)
+endif()
+
 # Warn on unused/dead code (GCC/Clang only; MSVC uses different flag syntax)
 add_compile_options($<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wunused-function>)
 add_compile_options($<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wunreachable-code>)
