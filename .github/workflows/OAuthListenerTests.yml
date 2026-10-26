@@ -16,13 +16,9 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitId: a1a1cbc975abf909a6c8985a6a2b8fe20bbd9bd6
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libssl-dev ccache
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@main

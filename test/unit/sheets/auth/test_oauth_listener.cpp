@@ -9,7 +9,6 @@
 #include "duckdb/common/exception.hpp"
 #include "sheets/auth/oauth_listener.hpp"
 
-#define CPPHTTPLIB_OPENSSL_SUPPORT
 #include "httplib.hpp"
 
 using namespace duckdb::sheets;
@@ -196,13 +195,13 @@ bool WaitUntil(std::atomic<bool> &flag) {
 // exercises the IPv6 listener the same way macOS Safari's preference for
 // resolving "localhost" to ::1 does in production.
 void SendGetThenPost(int port, const std::string &post_body, const std::string &host = "127.0.0.1") {
-	duckdb_httplib_openssl::Client cli(host, port);
+	duckdb_httplib::Client cli(host, port);
 	cli.set_connection_timeout(2, 0);
 
 	// on_listening fires right after the server is confirmed running, so
 	// this should connect on the first try; retry briefly to absorb
 	// scheduling jitter.
-	duckdb_httplib_openssl::Result get_result;
+	duckdb_httplib::Result get_result;
 	for (int attempt = 0; attempt < 50; attempt++) {
 		get_result = cli.Get("/");
 		if (get_result) {
@@ -219,10 +218,10 @@ void SendGetThenPost(int port, const std::string &post_body, const std::string &
 // Sends a single GET with the given query string (simulating the OAuth
 // redirect carrying the authorization code).
 void SendCodeCallbackGet(int port, const std::string &query, const std::string &host = "127.0.0.1") {
-	duckdb_httplib_openssl::Client cli(host, port);
+	duckdb_httplib::Client cli(host, port);
 	cli.set_connection_timeout(2, 0);
 
-	duckdb_httplib_openssl::Result result;
+	duckdb_httplib::Result result;
 	for (int attempt = 0; attempt < 50; attempt++) {
 		result = cli.Get("/?" + query);
 		if (result) {
@@ -236,10 +235,10 @@ void SendCodeCallbackGet(int port, const std::string &query, const std::string &
 // Sends a single GET with no query string at all (simulating a browser's
 // automatic /favicon.ico probe alongside the real redirect).
 void SendPlainGet(int port, const std::string &path, const std::string &host = "127.0.0.1") {
-	duckdb_httplib_openssl::Client cli(host, port);
+	duckdb_httplib::Client cli(host, port);
 	cli.set_connection_timeout(2, 0);
 
-	duckdb_httplib_openssl::Result result;
+	duckdb_httplib::Result result;
 	for (int attempt = 0; attempt < 50; attempt++) {
 		result = cli.Get(path);
 		if (result) {

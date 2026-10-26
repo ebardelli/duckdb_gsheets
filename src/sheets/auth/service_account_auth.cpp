@@ -5,41 +5,38 @@
 #include "sheets/transport/http_type.hpp"
 #include "sheets/util/encoding.hpp"
 
-#include <openssl/bio.h>
-#include <openssl/evp.h>
-#include <openssl/pem.h>
+#include <random>
+
+#include "mbedtls/md.h"
+#include "mbedtls/pk.h"
+#include "mbedtls/sha256.h"
 
 using json = nlohmann::json;
 
 namespace duckdb {
 namespace sheets {
 
-// RAII deleters for OpenSSL types
-struct BIODeleter {
-	void operator()(BIO *b) const {
-		if (b) {
-			BIO_free(b);
-		}
+// RAII wrapper for mbedtls_pk_context
+struct PkContext {
+	PkContext() {
+		mbedtls_pk_init(&ctx);
 	}
-};
-struct EVPPKEYDeleter {
-	void operator()(EVP_PKEY *p) const {
-		if (p) {
-			EVP_PKEY_free(p);
-		}
+	~PkContext() {
+		mbedtls_pk_free(&ctx);
 	}
-};
-struct EVPMDCTXDeleter {
-	void operator()(EVP_MD_CTX *m) const {
-		if (m) {
-			EVP_MD_CTX_free(m);
-		}
-	}
+	mbedtls_pk_context ctx;
 };
 
-using BIOPtr = std::unique_ptr<BIO, BIODeleter>;
-using EVPPKEYPtr = std::unique_ptr<EVP_PKEY, EVPPKEYDeleter>;
-using EVPMDCTXPtr = std::unique_ptr<EVP_MD_CTX, EVPMDCTXDeleter>;
+// mbedtls needs an RNG for RSA blinding when signing (and for key checks when
+// parsing). DuckDB's bundled mbedtls has no CTR_DRBG/entropy module, so use the
+// platform's random_device directly.
+static int RandomBytes(void *, unsigned char *output, size_t len) {
+	static thread_local std::random_device rd;
+	for (size_t i = 0; i < len; i++) {
+		output[i] = static_cast<unsigned char>(rd());
+	}
+	return 0;
+}
 
 constexpr int TOKEN_TTL = 1800;
 constexpr const char *TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
@@ -68,40 +65,26 @@ std::string ServiceAccountAuth::CreateJwt() {
 
 	auto pem = NormalizePemKey(privateKey);
 
-	// Parse PEM private key into EVP_PKEY (RAII handles cleanup)
-	BIOPtr bio(BIO_new_mem_buf(pem.c_str(), -1));
-	if (!bio) {
-		throw duckdb::IOException("Failed to create BIO for private key");
-	}
-
-	EVPPKEYPtr pkey(PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr));
-	if (!pkey) {
+	// Parse PEM private key (PKCS#8 or PKCS#1); mbedtls needs the PEM's
+	// terminating NUL counted in the length
+	PkContext pk;
+	if (mbedtls_pk_parse_key(&pk.ctx, reinterpret_cast<const unsigned char *>(pem.c_str()), pem.size() + 1, nullptr,
+	                         0, RandomBytes, nullptr) != 0) {
 		throw duckdb::IOException("Failed to parse private key");
 	}
-
-	// Create and initialize signing context
-	EVPMDCTXPtr mdctx(EVP_MD_CTX_new());
-	if (!mdctx) {
-		throw duckdb::IOException("Failed to create EVP_MD_CTX");
+	if (!mbedtls_pk_can_do(&pk.ctx, MBEDTLS_PK_RSA)) {
+		throw duckdb::IOException("Private key is not an RSA key");
 	}
 
-	if (EVP_DigestSignInit(mdctx.get(), nullptr, EVP_sha256(), nullptr, pkey.get()) != 1) {
-		throw duckdb::IOException("Failed to initialize signing context");
+	unsigned char hash[32];
+	if (mbedtls_sha256(reinterpret_cast<const unsigned char *>(signInput.data()), signInput.size(), hash, 0) != 0) {
+		throw duckdb::IOException("Failed to hash JWT");
 	}
 
-	// Provide data to sign
-	if (EVP_DigestSignUpdate(mdctx.get(), signInput.c_str(), signInput.length()) != 1) {
-		throw duckdb::IOException("Failed to update signing context");
-	}
-
-	// Get signature length, then sign
+	std::vector<unsigned char> signature(MBEDTLS_PK_SIGNATURE_MAX_SIZE);
 	size_t sigLen = 0;
-	if (EVP_DigestSignFinal(mdctx.get(), nullptr, &sigLen) != 1) {
-		throw duckdb::IOException("Failed to get signature length");
-	}
-
-	std::vector<unsigned char> signature(sigLen);
-	if (EVP_DigestSignFinal(mdctx.get(), signature.data(), &sigLen) != 1) {
+	if (mbedtls_pk_sign(&pk.ctx, MBEDTLS_MD_SHA256, hash, sizeof(hash), signature.data(), signature.size(), &sigLen,
+	                    RandomBytes, nullptr) != 0) {
 		throw duckdb::IOException("Failed to sign JWT");
 	}
 

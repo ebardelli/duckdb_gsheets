@@ -7,6 +7,13 @@ require-env TOKEN
 
 require gsheets
 
+# Requests go through httpfs, and the test runner turns extension autoloading off
+statement ok
+INSTALL httpfs;
+
+statement ok
+LOAD httpfs;
+
 statement ok
 CREATE SECRET bad_refresh_secret (
     TYPE gsheet,

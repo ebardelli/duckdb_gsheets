@@ -27,15 +27,9 @@ duckdb_gsheets/
 
 ## Building
 
-### Managing dependencies
+### Dependencies
 
-DuckDB extensions use VCPKG for dependency management. Follow the [installation instructions](https://vcpkg.io/en/getting-started) or run:
-
-```shell
-git clone https://github.com/Microsoft/vcpkg.git
-./vcpkg/bootstrap-vcpkg.sh
-export VCPKG_TOOLCHAIN_PATH=`pwd`/vcpkg/scripts/buildsystems/vcpkg.cmake
-```
+There are no external dependencies to install. Cryptography (service-account JWT signing, the PKCE challenge) uses DuckDB's bundled mbedtls, and HTTP requests go through DuckDB's own HTTP layer: the `httpfs` extension on native builds, which is autoloaded on first use, and the browser in DuckDB-WASM.
 
 ### Build steps
 
