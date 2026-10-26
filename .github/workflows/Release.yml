@@ -23,7 +23,7 @@ jobs:
       duckdb_version: v2.0.0
       ci_tools_version: v2.0-cyanoptera
       extension_name: gsheets
-      exclude_archs: "windows_amd64_rtools;wasm_mvp;wasm_eh;wasm_threads"
+      exclude_archs: "windows_amd64_rtools"
 
   publish:
     name: Sign and publish
@@ -47,9 +47,16 @@ jobs:
           mkdir dist
           for dir in artifacts/*/; do
             name=$(basename "$dir" | sed 's/-extension-/-/')
-            ./scripts/sign_extension.sh "$dir/gsheets.duckdb_extension" "dist/$name.duckdb_extension" \
-              scripts/extension_signing_public_key.pem
-            gzip -9 "dist/$name.duckdb_extension"
+            if [ -f "$dir/gsheets.duckdb_extension.wasm" ]; then
+              # Left uncompressed: DuckDB-WASM fetches .duckdb_extension.wasm as-is and Pages can't
+              # serve it with the Content-Encoding header a compressed file would need
+              ./scripts/sign_extension.sh "$dir/gsheets.duckdb_extension.wasm" "dist/$name.duckdb_extension.wasm" \
+                scripts/extension_signing_public_key.pem
+            else
+              ./scripts/sign_extension.sh "$dir/gsheets.duckdb_extension" "dist/$name.duckdb_extension" \
+                scripts/extension_signing_public_key.pem
+              gzip -9 "dist/$name.duckdb_extension"
+            fi
           done
           ls -l dist
 

@@ -143,8 +143,8 @@ For fork PRs, maintainers can manually trigger SQL tests via **Actions → SQL T
 
 Pushing a `v*` tag runs `.github/workflows/Release.yml`:
 
-1. Builds the extension for every platform against the DuckDB release named in `duckdb_version` (wasm is excluded). This must be a release tag such as `v2.0.0`, not a branch: branch builds are stamped with a dev version that released DuckDB clients refuse to load.
-2. Signs each binary with `scripts/sign_extension.sh`, verifies the signature against `scripts/extension_signing_public_key.pem`, and attaches the gzipped binaries to the GitHub release.
+1. Builds the extension for every platform against the DuckDB release named in `duckdb_version`, including the `wasm_mvp`, `wasm_eh` and `wasm_threads` DuckDB-WASM targets. This must be a release tag such as `v2.0.0`, not a branch: branch builds are stamped with a dev version that released DuckDB clients refuse to load.
+2. Signs each binary with `scripts/sign_extension.sh`, verifies the signature against `scripts/extension_signing_public_key.pem`, and attaches them to the GitHub release: native binaries gzipped, wasm binaries uncompressed (DuckDB-WASM fetches `.duckdb_extension.wasm` directly, and Pages can't send the `Content-Encoding` header a compressed file would need).
 3. Triggers `deploy_docs.yml` on `main`, which downloads the binaries from all non-draft, non-prerelease releases and lays them out under `/extensions` with `scripts/build_extension_repo.py`, next to the docs.
 
 The site then serves a DuckDB extension repository at `https://ebardelli.github.io/duckdb_gsheets/extensions`:
@@ -152,6 +152,7 @@ The site then serves a DuckDB extension repository at `https://ebardelli.github.
 ```
 .well-known/duckdb-extension-repo.json                        signing public keys
 <duckdb_version>/<platform>/gsheets.duckdb_extension.gz         newest release
+<duckdb_version>/wasm_*/gsheets.duckdb_extension.wasm           newest release, DuckDB-WASM
 gsheets/<tag>/<duckdb_version>/<platform>/gsheets.duckdb_extension.gz   last 3 releases
 ```
 

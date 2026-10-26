@@ -328,7 +328,7 @@ This will also require an additional API request approximately every 30 minutes.
 
 ## Limitations / Known Issues
 
-- DuckDB WASM is not (yet) supported.
+- In DuckDB WASM, the browser login (`PROVIDER oauth` without a `REFRESH_TOKEN`) is not available, since it needs a local listener for the redirect. Use `PROVIDER access_token`, `PROVIDER key_file` with `EMAIL` and `SECRET`, or `PROVIDER oauth` with `CLIENT_ID`, `CLIENT_SECRET` and a `REFRESH_TOKEN`.
 - Google Sheets has a limit of 10,000,000 cells per spreadsheet.
 - Sheets must already exist to COPY TO them.
 
