@@ -18,12 +18,6 @@
 // Utils
 #include "utils/version.hpp"
 
-// OpenSSL linked through vcpkg
-#include <openssl/opensslv.h>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-#include <openssl/bio.h>
-
 namespace duckdb {
 
 unique_ptr<TableRef> ReadSheetReplacement(ClientContext &context, ReplacementScanInput &input,
@@ -46,11 +40,6 @@ unique_ptr<TableRef> ReadSheetReplacement(ClientContext &context, ReplacementSca
 }
 
 static void LoadInternal(ExtensionLoader &loader) {
-	// Initialize OpenSSL
-	SSL_library_init();
-	SSL_load_error_strings();
-	OpenSSL_add_all_algorithms();
-
 	// Register read_gsheet table function
 	TableFunction read_gsheet_function("read_gsheet", {LogicalType::VARCHAR}, ReadSheetFunction, ReadSheetBind);
 	// Bind receives every keyword parameter, filled with its default when omitted;

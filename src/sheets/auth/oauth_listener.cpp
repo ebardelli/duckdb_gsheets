@@ -8,11 +8,10 @@
 #include <mutex>
 #include <thread>
 
-#include <openssl/evp.h>
+#include "mbedtls/sha256.h"
 
 #include "duckdb/common/exception.hpp"
 
-#define CPPHTTPLIB_OPENSSL_SUPPORT
 #include "httplib.hpp"
 
 #include "gsheets_utils.hpp"
@@ -30,9 +29,9 @@ namespace sheets {
 
 namespace {
 
-using HttpServer = duckdb_httplib_openssl::Server;
-using HttpRequest = duckdb_httplib_openssl::Request;
-using HttpResponse = duckdb_httplib_openssl::Response;
+using HttpServer = duckdb_httplib::Server;
+using HttpRequest = duckdb_httplib::Request;
+using HttpResponse = duckdb_httplib::Response;
 
 // Bounds how long a single connection's read/write may take. httplib enforces
 // this with a plain socket-level recv/send timeout, so a connection that's
@@ -217,19 +216,12 @@ std::string GeneratePkceCodeVerifier() {
 }
 
 std::string GeneratePkceCodeChallenge(const std::string &code_verifier) {
-	unsigned char digest[EVP_MAX_MD_SIZE];
-	unsigned int digest_len = 0;
-
-	std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
-	if (!ctx) {
-		throw IOException("Failed to create digest context for PKCE code_challenge");
-	}
-	if (EVP_DigestInit_ex(ctx.get(), EVP_sha256(), nullptr) != 1 ||
-	    EVP_DigestUpdate(ctx.get(), code_verifier.data(), code_verifier.size()) != 1 ||
-	    EVP_DigestFinal_ex(ctx.get(), digest, &digest_len) != 1) {
+	unsigned char digest[32];
+	if (mbedtls_sha256(reinterpret_cast<const unsigned char *>(code_verifier.data()), code_verifier.size(), digest,
+	                   0) != 0) {
 		throw IOException("Failed to compute PKCE code_challenge");
 	}
-	return Base64UrlEncode(digest, digest_len);
+	return Base64UrlEncode(digest, sizeof(digest));
 }
 
 std::string BuildAuthorizationCodeUrl(const std::string &auth_url, const std::string &client_id,

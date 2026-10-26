@@ -6,6 +6,10 @@
 #include "sheets/auth/service_account_auth.hpp"
 #include "sheets/transport/mock_http_client.hpp"
 
+#include "mbedtls/base64.h"
+#include "mbedtls/pk.h"
+#include "mbedtls/sha256.h"
+
 // =============================================================================
 // BearerTokenAuth Tests
 // =============================================================================
@@ -239,35 +243,69 @@ TEST_CASE("OAuthAuth throws IOException (not an uncaught json::type_error) on a 
 // ServiceAccountAuth Tests
 // =============================================================================
 
-// Test RSA private key (for testing only - not a real key)
-static const char TEST_PRIVATE_KEY[] = R"(-----BEGIN RSA PRIVATE KEY-----
-MIIEpAIBAAKCAQEA2a2rwplBQLF29amygykEMmYz0+Kcj3bKBp7draBHAFnGKzab
-mJGBQmhYltrVFxmePN2Cd0JitEYi5nKgLhF8gWBYcLBcihBNYlRWYgGkD1jLpHXa
-bFn2X3nXFMrPvUkDzFWjjxrVMeo1rVFVrXjG+UsghZs0TO4HyGkMsJkaxkIjLENR
-WJqEqnPJBJdqdGs0l80dZL0gCu9V0KcdyfJVnAo1rV1avVrSej4w7JSYnpqJuByT
-a3sVQ+6btOPbMR7fGYJPJ0zmHzJJfY6PplJmRjD+4rHbFd8mfkxlqGKXaKgZWi0y
-yls8OJnpkPUDKZJFnqBGzpAXXt6SYyFBGYBjbwIDAQABAoIBAC1J4j+v0lmzPYvH
-al0YYb8jUJfPO9HIJa9YCLFKrce5xb9prVoJjrkDgbRviWwfLmHchJrCBbG5ukLu
-w0aJX1GXWP9LBWaFaVUuSl3QOAMLVK4dL6O+kJL9E3hZLLz/0BEIP1g3Y8bS7xJC
-t1gsz5DPNTfsfPzsbBnZriUgnagvKpR9E4arG2s3peLGH/D28EByJT4juoGytvJu
-D74+4IQ4aSa2FW8BCZJ0RNUqJuTcaBnl3+R1Ab+sitPVVbF0QaltScYjpWdsSNGP
-z+VjZGrnNkMzGDV6scz6c8iolmVAn9JT9VSE9qdZ94s0trKvSmJrpkIf2zpNaQ87
-kaJA9UECgYEA7lXftjsAv4RHhqjcpZ7IzgjGvj6JfzShqtJPjakLrJONjjmE3lRi
-HstwfyLy18BvvGBFrV3hHUdm1sCqGgeM2l/9dYpJv5E1bpGpLkQL3gvzbSc8wYuX
-5PGK02pTNrvl3dOu3WjtmDn0+sKMpcHrNA0VoErrBgYdftJt5EN12DECgYEA6RpZ
-rV3KKRQF+zwJvhGnH5hWJn84+xRe6payy44qOn3b1kKw+FLEA8HdmgDRicpQrVKO
-0sT3t60PL8RXPc9SEGZ8j5D8JaNy71FYP3X+Bj6UfYsFig7Q42y8Ihf6mfD8HQMJ
-B6UXqdGrXePReqsNkvM7XwQE4MwkK0xbHTCkhj8CgYBmMF4sLGJdFT4S/dVHQAuu
-vjywvqZLfJzkT+GDz5ol4Kv3k53fuvlPMlqAmVbJtKNcIPi4VrXqvMT0LwMBtpsH
-KAGDJxdZCo3cfEKqEbWCWN9JM7poUhIZrM3rku4TviolBHVPsYPPZ7uxs8VUFCpF
-0ddT1OVKP+VaW7PRpfqzUQKBgQCnplspiPck8Ap3HAR8o7T0BFqkLsT0cyCgSYLo
-FVbvE7Lv384cFRwuWmGL1bXNz+6EL9VWBGX9cCjGCWXc8hD3HFMdF4Ys6mKbecbH
-bkkeYYdPsKfQGJG0kOUM4UvaFrQ/s2r0L5k4Li5QnA0fJbcRZfq5LNe7ewsy4byR
-Yd2o3wKBgQCa8gRI1FhIc52wgxJr4VpkWqjF37b13UjPKLkA4NVJ2H4FmB3ZMMXO
-vMjnEczCpVTMq6grdFNDq5BQ+hCYmpJjTfFSqnIq0NBD4j7f2cJGFr0ifyAp6Z9h
-bJLmkFstvHhZln4DQeDvR7ADLqufsif6Ytu6dDes1qP2+3GxQP1a8w==
------END RSA PRIVATE KEY-----
+// Test RSA key pair, generated for these tests only (PKCS#8, the format of a
+// Google service account key file's private_key). It has to be a real key:
+// mbedtls checks each signature it produces against the public key.
+static const char TEST_PRIVATE_KEY[] = R"(-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCVYbj2733Fy2tl
+S+EtAvWs6RuUwHYN2Vak0itawpdnArlH4Ip1kHcQKCX7skRiOtgC0/ZLBYA+QqtE
+mKj/S28QVFIA+NOtT5mI2J05oZLqICGN8tO3HfSIVY+1XA5lYLccn5Yr1Nnw6dft
+2P+BoFAexNu14aC9lYB2DHLFFYUPD1YMSr39zCGU8ddM6jYnxFttQPFif7Slr94n
+gsG28oUmjZzPhtdNG5hl7+v1nIiIMuCULztmbm9tohG3E2Ut251NJXrSAse1QF07
+nYrDpyUo3comUU7TnWH1fWZpeUh75qrVrlJaJF037elqtT3g+47Y/gsHBJMzgFBs
+5Dk0TWjtAgMBAAECggEAEv8AVHaUGekKWTFTCzRLJZfnJ/1phc1TlVYcqUgBlNnl
+0dwd/2FFospYOi+rPoqZGZL2yQeEDWbQ/MIlC4H+N6dhXjpGQM3UinBxXfjMA/Xe
+Dn0Iq0ql5AhtY/S25/Fql7s7j4tbw6UZDmf/5e4LAj6qafCtTi6KzXg7yBA6gXWS
+D9IJsXSKG957sbQWuX3iEmCMzAFrxUP+F6oSsMhht7l6lv1qyEUKf1mogeqb/gIl
+RucjWTSsJZqHRJxHUBNcjuxB4lOWfXH9+iZii0K0Jm0BTU8qnWCuL/ur+T0s9huI
+h0oLvrOqToB4IgTWkvMb+t+GdL/gA+11YxDhpFTpiQKBgQDGfp43HSiq7AYaqJLo
+QEx00B1mEL+sCfHPjQjr/wem1oBlzstzz2hnUacC4MnObiTZdqpnhfB0UQfv0kaX
+oMi0JsONgt7rgOKSHGCgTAiRPnBYG+s4U35Shr7jaKmgbXQuT1+wpehZxdzne56/
+L89NfQcnUxx2l4zWa7pK2d+OLwKBgQDAqKQQUscb+BetJ5Ky6pU4Ad+PmkxbtX2x
+WwIl/OBJRJaDOrn7jW7KeHsLvmk+58vyEoJczh9UTpbpNzLJm7xzvR6CBoo/VDyD
+bEQ0kaEtGaK30juTv/laPXpCOP0seJeDImVkbie1erR3gXU1pvwADeVHOBrVaXe0
+uGqZuEjvowKBgDugd5ioyrmlkyPY9eCMyCrjBaHOcDWW+yvU+xQhlUPZ9dIfb+CH
+Mp6u2ZO0wQqg7bLhwci9ZIEcglzZdtk/tGrhpibRZHOsUOOBYMlmbcBr2EWvhVZz
+RmQ2FAuuOh52IstyjpU7EXQ+SuDCsupNy2FEqKx4e/loBye2Ts0Da/ODAoGAIUV+
+f+srw6LGw/qPlSJ5/qAkMbKd+UCQom5rIpBXU4/qxmL/93dnaMQBy/doSZrSV83m
+gYx/UJn56fDEbpjcpMhGWoIyodk0UiYCaWm1AgrpVQGTlGKU94aidIlO/70bvWPV
+StDTPr4gKHtM+KUL5B6COBhyWeTK7YTjtARlZC0CgYEAtiXLWdzG6Vpwr+B8ORR4
+u886UQjBK/HDd5fZbGc4Z2JeFdq9pJ2rr4qcEcN30DKf5/2mp9l79RkdJccR+vNB
+2t5Ri07D5xqWemnaajt+DeEcuDA2zY0IB2xAcT62GAgGfZ7kPBGtNfqDQYHqjIyo
+Ep9D54FfKriVGb9sBNyoAfg=
+-----END PRIVATE KEY-----
 )";
+
+static const char TEST_PUBLIC_KEY[] = R"(-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlWG49u99xctrZUvhLQL1
+rOkblMB2DdlWpNIrWsKXZwK5R+CKdZB3ECgl+7JEYjrYAtP2SwWAPkKrRJio/0tv
+EFRSAPjTrU+ZiNidOaGS6iAhjfLTtx30iFWPtVwOZWC3HJ+WK9TZ8OnX7dj/gaBQ
+HsTbteGgvZWAdgxyxRWFDw9WDEq9/cwhlPHXTOo2J8RbbUDxYn+0pa/eJ4LBtvKF
+Jo2cz4bXTRuYZe/r9ZyIiDLglC87Zm5vbaIRtxNlLdudTSV60gLHtUBdO52Kw6cl
+KN3KJlFO051h9X1maXlIe+aq1a5SWiRdN+3parU94PuO2P4LBwSTM4BQbOQ5NE1o
+7QIDAQAB
+-----END PUBLIC KEY-----
+)";
+
+// Base64url (no padding) decode, for checking JWT signatures
+static std::string Base64UrlDecode(std::string input) {
+	for (auto &c : input) {
+		if (c == '-') {
+			c = '+';
+		} else if (c == '_') {
+			c = '/';
+		}
+	}
+	while (input.size() % 4 != 0) {
+		input += '=';
+	}
+	std::string out(input.size(), '\0');
+	size_t out_len = 0;
+	REQUIRE(mbedtls_base64_decode(reinterpret_cast<unsigned char *>(&out[0]), out.size(), &out_len,
+	                              reinterpret_cast<const unsigned char *>(input.data()), input.size()) == 0);
+	out.resize(out_len);
+	return out;
+}
 
 TEST_CASE("ServiceAccountAuth creates valid JWT structure", "[auth]") {
 	duckdb::sheets::MockHttpClient mockHttp;
@@ -324,6 +362,23 @@ TEST_CASE("ServiceAccountAuth JWT has correct structure", "[auth]") {
 		}
 	}
 	REQUIRE(dotCount == 2);
+
+	// The signature is RS256 over "<header>.<claims>" and verifies against the public key
+	size_t sigPos = jwt.rfind('.');
+	std::string signInput = jwt.substr(0, sigPos);
+	std::string signature = Base64UrlDecode(jwt.substr(sigPos + 1));
+
+	unsigned char hash[32];
+	REQUIRE(mbedtls_sha256(reinterpret_cast<const unsigned char *>(signInput.data()), signInput.size(), hash, 0) == 0);
+
+	mbedtls_pk_context pub;
+	mbedtls_pk_init(&pub);
+	REQUIRE(mbedtls_pk_parse_public_key(&pub, reinterpret_cast<const unsigned char *>(TEST_PUBLIC_KEY),
+	                                    sizeof(TEST_PUBLIC_KEY)) == 0);
+	int verify = mbedtls_pk_verify(&pub, MBEDTLS_MD_SHA256, hash, sizeof(hash),
+	                               reinterpret_cast<const unsigned char *>(signature.data()), signature.size());
+	mbedtls_pk_free(&pub);
+	REQUIRE(verify == 0);
 }
 
 TEST_CASE("ServiceAccountAuth caches token", "[auth]") {

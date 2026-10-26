@@ -15,6 +15,13 @@ Catalog Error: Table Function with name read_gsheet does not exist!
 # Require statement will ensure this test is run with this extension loaded
 require gsheets
 
+# Requests go through httpfs, and the test runner turns extension autoloading off
+statement ok
+INSTALL httpfs;
+
+statement ok
+LOAD httpfs;
+
 # Create a secret NB must substitute a token, do not commit!
 statement ok
 create secret test_secret (

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <string>
 #include <map>
 
@@ -22,13 +21,6 @@ struct HttpResponse {
 	int statusCode;
 	HttpHeaders headers;
 	std::string body;
-};
-
-struct HttpProxyConfig {
-	std::string host;
-	uint16_t port = 0;
-	std::string username;
-	std::string password;
 };
 
 } // namespace sheets

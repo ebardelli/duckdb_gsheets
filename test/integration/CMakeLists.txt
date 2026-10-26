@@ -13,7 +13,7 @@
 # extension's root CMakeLists.txt, itself pulled into DuckDB's own CMake project
 # (see extension_config.cmake) - so include paths set there (src/include,
 # third_party, duckdb/third_party/httplib) and targets like
-# duckdb_static/OpenSSL::SSL are already available here.
+# duckdb_static/duckdb_mbedtls are already available here.
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../duckdb/third_party/catch)
 
@@ -35,8 +35,7 @@ add_executable(
 # LoadAllExtensions in if duckdb_static (which references it) already appeared
 # on the link line - the reverse order links fine with macOS's linker but
 # fails with an undefined reference on Linux.
-target_link_libraries(oauth_listener_tests duckdb_static OpenSSL::SSL
-                      OpenSSL::Crypto)
+target_link_libraries(oauth_listener_tests duckdb_static duckdb_mbedtls)
 link_extension_libraries(oauth_listener_tests "")
 
 # Winsock (required by httplib on Windows; #pragma comment covers MSVC, but this
@@ -44,13 +43,6 @@ link_extension_libraries(oauth_listener_tests "")
 # extension target's own ws2_32 linking.
 if(WIN32)
   target_link_libraries(oauth_listener_tests ws2_32)
-endif()
-
-# httplib loads TLS roots from the macOS Keychain, matching the main extension
-# target's own framework linking.
-if(APPLE)
-  target_link_libraries(oauth_listener_tests "-framework Security"
-                        "-framework CoreFoundation")
 endif()
 
 # COPY TO tests: drive the gsheet_write callback set through DuckDB's own
@@ -62,17 +54,11 @@ add_executable(
   copy_function_tests ${CMAKE_CURRENT_SOURCE_DIR}/../unit/test_main.cpp
                       ${CMAKE_CURRENT_SOURCE_DIR}/test_copy_function.cpp)
 
-target_link_libraries(copy_function_tests gsheets_extension duckdb_static
-                      OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(copy_function_tests gsheets_extension duckdb_static)
 link_extension_libraries(copy_function_tests "")
 
 if(WIN32)
   target_link_libraries(copy_function_tests ws2_32)
-endif()
-
-if(APPLE)
-  target_link_libraries(copy_function_tests "-framework Security"
-                        "-framework CoreFoundation")
 endif()
 
 # CreateAuthFromSecret tests: build the auth provider from real `gsheet`
@@ -82,15 +68,9 @@ add_executable(
   auth_factory_tests ${CMAKE_CURRENT_SOURCE_DIR}/../unit/test_main.cpp
                      ${CMAKE_CURRENT_SOURCE_DIR}/test_auth_factory.cpp)
 
-target_link_libraries(auth_factory_tests gsheets_extension duckdb_static
-                      OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(auth_factory_tests gsheets_extension duckdb_static)
 link_extension_libraries(auth_factory_tests "")
 
 if(WIN32)
   target_link_libraries(auth_factory_tests ws2_32)
-endif()
-
-if(APPLE)
-  target_link_libraries(auth_factory_tests "-framework Security"
-                        "-framework CoreFoundation")
 endif()

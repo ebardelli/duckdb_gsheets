@@ -3,9 +3,6 @@ cmake_minimum_required(VERSION 3.5)
 # Set extension name here
 set(TARGET_NAME gsheets)
 
-# Find OpenSSL package
-find_package(OpenSSL REQUIRED)
-
 set(EXTENSION_NAME ${TARGET_NAME}_extension)
 set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 
@@ -39,7 +36,6 @@ set(EXTENSION_SOURCES
     src/sheets/resources/values.cpp
     src/sheets/resources/spreadsheet.cpp
     src/sheets/transport/http_client.cpp
-    src/sheets/transport/httplib_client.cpp
     src/sheets/transport/duckdb_http_client.cpp
     src/sheets/transport/mock_http_client.cpp
     src/sheets/transport/client_factory.cpp
@@ -47,16 +43,14 @@ set(EXTENSION_SOURCES
     src/sheets/auth_factory.cpp
     src/utils/secret.cpp
     src/utils/options.cpp
-    src/utils/proxy.cpp
     src/utils/version.cpp
     ${OAUTH_LISTENER_SOURCES})
 
-# Browsers have no sockets, so DuckDB-WASM builds leave out our own httplib
-# client (requests go through DuckDB-WASM's HTTPUtil instead) and the local
-# OAuth redirect listener (browser logins aren't supported there - see
+# Browsers have no sockets, so DuckDB-WASM builds leave out the local OAuth
+# redirect listener (browser logins aren't supported there - see
 # gsheets_auth.cpp).
 if(EMSCRIPTEN)
-  list(REMOVE_ITEM EXTENSION_SOURCES src/sheets/transport/httplib_client.cpp
+  list(REMOVE_ITEM EXTENSION_SOURCES
        ${CMAKE_CURRENT_SOURCE_DIR}/src/sheets/auth/oauth_listener.cpp)
 endif()
 
@@ -67,16 +61,11 @@ add_compile_options($<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wunreachable-code>)
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 
-# Link OpenSSL in both the static library as the loadable extension
-target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
-target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
-
-# duckdb's vendored httplib now loads TLS roots from the macOS Keychain by
-# default (CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN), which needs Security.framework.
-if(APPLE)
-  target_link_libraries(${EXTENSION_NAME} "-framework Security" "-framework CoreFoundation")
-  target_link_libraries(${LOADABLE_EXTENSION_NAME} "-framework Security" "-framework CoreFoundation")
-endif()
+# Service-account JWT signing and the PKCE challenge use DuckDB's bundled
+# mbedtls. DuckDB builds it with hidden visibility, so the extension links its
+# own static copy rather than resolving it from the host (as parquet does).
+target_link_libraries(${EXTENSION_NAME} duckdb_mbedtls)
+target_link_libraries(${LOADABLE_EXTENSION_NAME} duckdb_mbedtls)
 
 # The local OAuth listener (src/sheets/auth/oauth_listener.cpp) uses the
 # vendored httplib::Server, which uses Winsock on Windows. httplib.hpp's

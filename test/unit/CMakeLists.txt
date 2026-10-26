@@ -6,8 +6,13 @@ project(gsheets_unit_tests)
 # Derive extension root from current location
 get_filename_component(EXT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 
-# Find OpenSSL (required for ServiceAccountAuth)
-find_package(OpenSSL REQUIRED)
+# DuckDB's bundled mbedtls (required for ServiceAccountAuth), built from its
+# library sources only: mbedtls_wrapper.cpp needs the full DuckDB library, which
+# this standalone target doesn't link.
+set(MBEDTLS_DIR ${EXT_ROOT}/duckdb/third_party/mbedtls)
+file(GLOB MBEDTLS_SOURCES ${MBEDTLS_DIR}/library/*.cpp)
+add_library(unit_tests_mbedtls STATIC ${MBEDTLS_SOURCES})
+target_include_directories(unit_tests_mbedtls PUBLIC ${MBEDTLS_DIR}/include)
 
 # Include paths
 include_directories(${EXT_ROOT}/duckdb/third_party/catch)
@@ -60,8 +65,7 @@ set(UNIT_TEST_SOURCES
 
 add_executable(unit_tests ${UNIT_TEST_SOURCES})
 
-# Link OpenSSL
-target_link_libraries(unit_tests OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(unit_tests unit_tests_mbedtls)
 
 # Enable testing
 enable_testing()
