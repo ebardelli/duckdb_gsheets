@@ -26,6 +26,16 @@ using json = nlohmann::json;
 
 namespace duckdb {
 
+// The extension's built-in OAuth client, used unless the caller supplies
+// their own via the `client_id` secret parameter (see
+// CreateGsheetSecretFromOAuth). No client_secret is embedded for it: it
+// only ever drives the implicit-grant flow below, which needs none. Callers
+// who want a refresh_token - or who pass in one they already have - must
+// bring their own client_id *and* client_secret.
+static const std::string kDefaultOAuthClientId =
+    "793766532675-rehqgocfn88h0nl88322ht6d1i12kl4e.apps.googleusercontent.com";
+
+#ifndef __EMSCRIPTEN__
 // Both InitiateOAuthFlow and RunOAuthCodeFlow bind their local redirect
 // listener on this same hardcoded port (see PORT in each) - it has to be
 // fixed, since it's baked into the redirect_uri registered for the OAuth
@@ -48,15 +58,6 @@ static bool IsStdinInteractive() {
 	return isatty(fileno(stdin)) != 0;
 #endif
 }
-
-// The extension's built-in OAuth client, used unless the caller supplies
-// their own via the `client_id` secret parameter (see
-// CreateGsheetSecretFromOAuth). No client_secret is embedded for it: it
-// only ever drives the implicit-grant flow below, which needs none. Callers
-// who want a refresh_token - or who pass in one they already have - must
-// bring their own client_id *and* client_secret.
-static const std::string kDefaultOAuthClientId =
-    "793766532675-rehqgocfn88h0nl88322ht6d1i12kl4e.apps.googleusercontent.com";
 
 // The callbacks RunLocalOAuthListener/RunLocalOAuthCodeListener need to open
 // the user's browser, let Ctrl+C cancel a pending login, and (on an
@@ -132,6 +133,7 @@ static LoginCallbacks PrepareLoginCallbacks(ClientContext &context, const std::s
 	}
 	return callbacks;
 }
+#endif // __EMSCRIPTEN__
 
 // This code is copied, with minor modifications from
 // https://github.com/duckdb/duckdb_azure/blob/main/src/azure_secret.cpp
@@ -167,6 +169,7 @@ static unique_ptr<BaseSecret> CreateGsheetSecretFromAccessToken(ClientContext &c
 	return std::move(result);
 }
 
+#ifndef __EMSCRIPTEN__
 // Exchanges an authorization code for an access_token + refresh_token at
 // Google's token endpoint. Throws IOException on any failure, including a
 // response that (unexpectedly, given access_type=offline&prompt=consent)
@@ -191,6 +194,7 @@ static sheets::OAuthTokenResponse ExchangeAuthorizationCodeForTokens(sheets::IHt
 
 	return tokenResponse;
 }
+#endif // __EMSCRIPTEN__
 
 static unique_ptr<BaseSecret> CreateGsheetSecretFromOAuth(ClientContext &context, CreateSecretInput &input) {
 	auto scope = input.scope;
@@ -334,6 +338,23 @@ void CreateGsheetSecretFunctions::Register(ExtensionLoader &loader) {
 	loader.RegisterFunction(key_file_function);
 }
 
+#ifdef __EMSCRIPTEN__
+// Both flows need a local HTTP listener for Google's redirect, which a browser
+// can't run.
+static const char *kBrowserLoginUnsupported =
+    "Browser login isn't available in DuckDB-WASM. Create the secret with PROVIDER access_token, PROVIDER "
+    "key_file (with EMAIL and SECRET), or PROVIDER oauth with CLIENT_ID, CLIENT_SECRET and a REFRESH_TOKEN "
+    "obtained on a desktop instead.";
+
+std::string InitiateOAuthFlow(ClientContext &context, const std::string &client_id) {
+	throw NotImplementedException(kBrowserLoginUnsupported);
+}
+
+sheets::OAuthTokenResponse RunOAuthCodeFlow(ClientContext &context, sheets::IHttpClient &http,
+                                            const std::string &client_id, const std::string &client_secret) {
+	throw NotImplementedException(kBrowserLoginUnsupported);
+}
+#else
 std::string InitiateOAuthFlow(ClientContext &context, const std::string &client_id) {
 	// Runs a short-lived local HTTP listener so the OAuth redirect can hand back
 	// the access token automatically, without the user having to copy/paste it.
@@ -377,5 +398,6 @@ sheets::OAuthTokenResponse RunOAuthCodeFlow(ClientContext &context, sheets::IHtt
 
 	return ExchangeAuthorizationCodeForTokens(http, code, client_id, client_secret, redirect_uri, code_verifier);
 }
+#endif // __EMSCRIPTEN__
 
 } // namespace duckdb
