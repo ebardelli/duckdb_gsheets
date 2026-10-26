@@ -61,7 +61,8 @@ jobs:
               --json tagName,createdAt --jq 'sort_by(.createdAt) | .[].tagName'); do
             dir="$RUNNER_TEMP/releases/$tag"
             mkdir -p "$dir"
-            gh release download "$tag" --pattern 'gsheets-*.duckdb_extension.gz' --dir "$dir" || true
+            gh release download "$tag" --pattern 'gsheets-*.duckdb_extension.gz' \
+              --pattern 'gsheets-*.duckdb_extension.wasm' --dir "$dir" || true
             releases+=("$tag=$dir")
           done
           python3 scripts/build_extension_repo.py --out docs/build/extensions \

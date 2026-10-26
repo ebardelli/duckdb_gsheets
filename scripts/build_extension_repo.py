@@ -3,12 +3,14 @@
 Usage:
     python3 build_extension_repo.py --out DIR --public-key PEM [--keep-versioned N] TAG=DIR [TAG=DIR ...]
 
-Each TAG=DIR is a release whose DIR holds signed *.duckdb_extension.gz files, listed oldest first.
+Each TAG=DIR is a release whose DIR holds signed *.duckdb_extension.gz (native) and *.duckdb_extension.wasm
+(DuckDB-WASM, uncompressed) files, listed oldest first.
 The DuckDB version and platform are read from each binary's metadata footer, so file names don't matter.
 
 Output layout (relative to --out), matching ExtensionHelper::ExtensionUrlTemplate:
     .well-known/duckdb-extension-repo.json                       public keys for CREATE EXTENSION REPOSITORY
     <duckdb_version>/<platform>/<name>.duckdb_extension.gz        newest release per DuckDB version/platform
+                                                                  (.duckdb_extension.wasm for wasm_* platforms)
     <name>/<ext_version>/<duckdb_version>/<platform>/...          the last --keep-versioned releases
 """
 
@@ -25,7 +27,7 @@ FIELD_SIZE = 32
 
 
 def read_footer(path):
-    with gzip.open(path, 'rb') as f:
+    with (gzip.open(path, 'rb') if path.suffix == '.gz' else open(path, 'rb')) as f:
         data = f.read()
     if len(data) < FOOTER_SIZE:
         raise ValueError(f'{path}: too small to be a DuckDB extension')
@@ -68,10 +70,9 @@ def main():
     keys = [key.read_text().strip() for key in args.public_key]
     (well_known / 'duckdb-extension-repo.json').write_text(json.dumps({'signature_keys': keys}, indent=2) + '\n')
 
-    filename = f'{args.name}.duckdb_extension.gz'
     versioned_from = len(releases) - args.keep_versioned
     for index, (tag, directory) in enumerate(releases):
-        binaries = sorted(directory.glob('*.duckdb_extension.gz'))
+        binaries = sorted(directory.glob('*.duckdb_extension.gz')) + sorted(directory.glob('*.duckdb_extension.wasm'))
         if not binaries:
             print(f'{tag}: no extension binaries, skipping', file=sys.stderr)
             continue
@@ -80,6 +81,7 @@ def main():
             if footer['abi_type'] != 'CPP':
                 raise ValueError(f'{binary}: unsupported ABI type {footer["abi_type"]}')
             duckdb_version, platform = footer['duckdb_version'], footer['platform']
+            filename = f'{args.name}.duckdb_extension{binary.suffix}'
             # newer releases overwrite older ones
             targets = [args.out / duckdb_version / platform / filename]
             if index >= versioned_from:
