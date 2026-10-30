@@ -23,32 +23,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: docs/package-lock.json
-
-      - name: Install dependencies
-        run: npm install --prefix docs
-
-      - name: Build static files
-        run: npm run build --prefix docs
-
-      - name: Get Pages base path
-        id: pages
-        uses: actions/configure-pages@v5
-
-      # Evidence's app.html links its icons from the site root, which 404s on a
-      # project site served from /<repo>/
-      - name: Prefix root-relative icon links with the base path
-        if: steps.pages.outputs.base_path != ''
-        env:
-          BASE_PATH: ${{ steps.pages.outputs.base_path }}
-        run: |
-          find docs/build -name '*.html' -exec sed -i -E \
-            "s#href=\"/(favicon\.ico|icon\.svg|apple-touch-icon\.png|manifest\.webmanifest)\"#href=\"${BASE_PATH}/\1\"#g" {} +
+      - name: Copy static site
+        run: cp -R docs/site _site
 
       # Serve the signed binaries attached to the GitHub releases as a DuckDB extension repository
       - name: Build extension repository
@@ -65,13 +41,13 @@ jobs:
               --pattern 'gsheets-*.duckdb_extension.wasm' --dir "$dir" || true
             releases+=("$tag=$dir")
           done
-          python3 scripts/build_extension_repo.py --out docs/build/extensions \
+          python3 scripts/build_extension_repo.py --out _site/extensions \
             --public-key scripts/extension_signing_public_key.pem "${releases[@]}"
 
       - name: Upload static files as artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/build/
+          path: _site/
 
   # Deployment job
   deploy:

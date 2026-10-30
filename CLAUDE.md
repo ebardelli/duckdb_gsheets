@@ -16,4 +16,4 @@ The extension has three layers: **Transport** (HTTP client abstraction), **Auth*
 
 ## Contributing
 
-See [docs/pages/development.md](docs/pages/development.md) for build setup, testing, repo layout, and CI pipeline details.
+See [docs/development.md](docs/development.md) for build setup, testing, repo layout, and CI pipeline details.
