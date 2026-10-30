@@ -23,8 +23,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Copy static site
-        run: cp -R docs/site _site
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build site
+        run: |
+          pip install markdown-it-py==3.0.0
+          python3 scripts/build_site.py --out _site
 
       # Serve the signed binaries attached to the GitHub releases as a DuckDB extension repository
       - name: Build extension repository

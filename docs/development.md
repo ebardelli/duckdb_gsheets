@@ -19,7 +19,7 @@ duckdb_gsheets/
 │   ├── unit/                   # C++ unit tests (standalone, no credentials needed)
 │   └── integration/            # C++ tests that need the full extension build (no credentials needed)
 ├── scripts/                    # Dev scripts (test runners, token generation)
-├── docs/                       # Contributor docs; site/ is the GitHub Pages site
+├── docs/                       # Contributor docs and the GitHub Pages site sources
 ├── .github/workflows/          # CI pipelines
 ├── duckdb/                     # DuckDB submodule
 └── extension-ci-tools/         # DuckDB CI tooling submodule
@@ -155,6 +155,15 @@ Only the last three releases get versioned copies, because a Pages site is limit
 ### Signing key
 
 The private key is the `DUCKDB_EXTENSION_SIGNING_PK` repository secret: a 2048-bit RSA key in PEM format. The matching public key is committed as `scripts/extension_signing_public_key.pem`. To rotate keys, add the new public key to `.well-known` (pass a second `--public-key` to `build_extension_repo.py`) before switching the secret, so existing users can re-create the repository and trust both keys during the switch.
+
+## Docs site
+
+`scripts/build_site.py` builds the GitHub Pages site into a directory: the landing page (`docs/templates/home.html`), pages cut from sections of `README.md`, and the privacy policy (`docs/privacy.md`), each wrapped in `docs/templates/page.html`, plus the static assets in `docs/site/`. Which README sections go on which page is set by `PAGES` in the script, so a new README section needs adding there. To preview it:
+
+```sh
+uv run scripts/build_site.py --out _site
+python3 -m http.server -d _site
+```
 
 ## Installing deployed binaries
 
