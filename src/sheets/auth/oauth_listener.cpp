@@ -470,28 +470,197 @@ std::string RunLoginListenerLoop(int port, const std::function<void()> &on_liste
 	}
 }
 
+// Wraps `content` in the self-contained page shell every listener response
+// uses: a centered card with the extension's name and a status icon. Every
+// script, style and icon is inline - no external resources or links - so
+// the login flow never depends on (or leaks anything to) a remote site; the
+// browser's status page is served entirely from the local listener.
+// `status` ("ok", "error", "warn" or "pending") picks the icon and its
+// color; the redirect page's JS switches it on the card's data-status as the
+// outcome becomes known.
+std::string BuildStatusPage(const std::string &status, const std::string &title, const std::string &content) {
+	return R"HTML(<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>)HTML" +
+	       title + R"HTML( &middot; DuckDB GSheets</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f5f5f3; --card: #ffffff; --text: #1d1d1f; --muted: #66666b; --border: #e2e2df; --code-bg: #f4f4f2;
+  --ok: #1e8a4c; --error: #c62828; --warn: #a86400; --pending: #66666b; --brand: #fff100;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161617; --card: #1f1f21; --text: #ececee; --muted: #9d9da3; --border: #343437; --code-bg: #29292c;
+    --ok: #4cc27f; --error: #f07070; --warn: #e3a33b; --pending: #9d9da3;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 1.5rem 1rem;
+  background: var(--bg); color: var(--text); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.card {
+  width: 100%; max-width: 32rem; padding: 2rem; background: var(--card);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.brand {
+  display: flex; align-items: center; gap: 0.5rem; margin: 0 0 1.75rem;
+  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted);
+}
+.brand::before {
+  content: ""; width: 0.7rem; height: 0.7rem; border-radius: 50%;
+  background: var(--brand); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+.icon {
+  width: 2.5rem; height: 2.5rem; margin-bottom: 1rem; border-radius: 50%; display: grid; place-items: center;
+  color: var(--pending); background: color-mix(in srgb, currentColor 13%, transparent);
+}
+.icon svg {
+  display: none; width: 1.4rem; height: 1.4rem;
+  fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round;
+}
+[data-status="ok"] .icon { color: var(--ok); }
+[data-status="error"] .icon { color: var(--error); }
+[data-status="warn"] .icon { color: var(--warn); }
+[data-status="ok"] .i-ok, [data-status="error"] .i-error, [data-status="warn"] .i-warn,
+[data-status="pending"] .i-pending { display: block; }
+.i-pending { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+h1 { margin: 0 0 0.4rem; font-size: 1.35rem; line-height: 1.3; }
+p { margin: 0; color: var(--muted); }
+.copy-block { margin-top: 1.25rem; }
+.copy-block h2 { margin: 0 0 0.4rem; font-size: 0.8rem; font-weight: 600; }
+.copy-row { position: relative; }
+pre {
+  margin: 0; padding: 0.75rem 4.75rem 0.75rem 0.85rem; white-space: pre-wrap; word-break: break-all;
+  font: 0.84rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+}
+button.copy {
+  position: absolute; top: 0.45rem; right: 0.45rem; padding: 0.2rem 0.65rem; cursor: pointer;
+  font: 600 0.78rem/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text);
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+}
+button.copy:hover { border-color: var(--muted); }
+@media (max-width: 480px) { .card { padding: 1.5rem 1.25rem; } }
+</style>
+</head>
+<body>
+<main class="card" id="card" data-status=")HTML" +
+	       status + R"HTML(">
+<p class="brand">DuckDB GSheets</p>
+<div class="icon" aria-hidden="true">
+<svg class="i-ok" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+<svg class="i-error" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg>
+<svg class="i-warn" viewBox="0 0 24 24"><path d="M12 6.5v7M12 17.5v.01"/></svg>
+<svg class="i-pending" viewBox="0 0 24 24"><path d="M12 5a7 7 0 1 1-7 7"/></svg>
+</div>
+)HTML" + content +
+	       "\n</main>\n</body>\n</html>\n";
+}
+
+std::string BuildSimpleStatusPage(const std::string &status, const std::string &title, const std::string &message) {
+	return BuildStatusPage(status, title, "<h1>" + title + "</h1>\n<p>" + message + "</p>");
+}
+
 // The page served for the browser's GET after the OAuth redirect. Runs
 // client-side, in the browser, at the http://localhost:<port> origin: reads
 // the access_token/state out of the URL fragment (fragments are never sent
 // to any server) and POSTs them back to us, same-origin - so no CORS
-// headers are needed, or served, on either response.
+// headers are needed, or served, on either response. It then reports the
+// outcome in place, keyed off the POST's status (see
+// RegisterImplicitGrantHandlers): 200 is success, 403 a state mismatch
+// (retrying is the only fix - showing the token would sidestep the CSRF
+// check), and anything else, including the listener being unreachable by
+// then, falls back to showing the token so the login isn't lost: it can be
+// pasted into a DuckDB still waiting for it, or used with PROVIDER
+// access_token - offered both as the bare token and as a ready-to-run
+// CREATE SECRET statement, each with a Copy button. All dynamic text goes
+// through textContent, never innerHTML.
 std::string BuildRedirectPageBody() {
-	return "<script>"
-	       "const hash = window.location.hash.substring(1);"
-	       "const params = new URLSearchParams(hash);"
-	       "const token = params.get('access_token');"
-	       "const state = params.get('state') || '';"
-	       "if (token) {"
-	       "  fetch('/', {"
-	       "    method: 'POST',"
-	       "    body: 'state=' + encodeURIComponent(state) + '&access_token=' + encodeURIComponent(token)"
-	       "  }).then((response) => {"
-	       "    if (response.ok) {"
-	       "      window.location.href = 'https://duckdb-gsheets.com/oauth#ready=1&access_token=success';"
-	       "    }"
-	       "  });"
-	       "}"
-	       "</script></body></html>";
+	return BuildStatusPage("pending", "Completing login", R"HTML(<h1 id="title">Completing login...</h1>
+<p id="message">Handing the login over to DuckDB.</p>
+<div id="fallback" hidden>
+<section class="copy-block">
+<h2>Access token</h2>
+<div class="copy-row"><pre id="token"></pre><button type="button" class="copy" data-copy="token">Copy</button></div>
+</section>
+<section class="copy-block">
+<h2>Or create the secret in DuckDB</h2>
+<div class="copy-row"><pre id="sql"></pre><button type="button" class="copy" data-copy="sql">Copy</button></div>
+</section>
+</div>
+<script>
+(function () {
+  const params = new URLSearchParams(window.location.hash.substring(1));
+  const token = params.get('access_token');
+  const state = params.get('state') || '';
+  const error = params.get('error');
+  // Keep the token out of the address bar and browser history from here on.
+  history.replaceState(null, '', window.location.pathname);
+
+  function show(status, title, message) {
+    document.getElementById('card').dataset.status = status;
+    document.getElementById('title').textContent = title;
+    document.getElementById('message').textContent = message;
+    document.title = title + ' · DuckDB GSheets';
+  }
+
+  function showToken(reason) {
+    show('warn', 'Login not completed automatically',
+         reason + ' If DuckDB is still waiting, paste the access token into its terminal and press Enter. ' +
+         'Otherwise, create the secret with the SQL below.');
+    document.getElementById('token').textContent = token;
+    document.getElementById('sql').textContent =
+        "CREATE SECRET (\n    TYPE gsheet,\n    PROVIDER access_token,\n    TOKEN '" +
+        token.replace(/'/g, "''") + "'\n);";
+    document.getElementById('fallback').hidden = false;
+  }
+
+  // http://localhost is a secure context, so the Clipboard API is available;
+  // the button only reports success once the write actually went through.
+  document.querySelectorAll('button.copy').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const text = document.getElementById(button.dataset.copy).textContent;
+      navigator.clipboard.writeText(text).then(function () {
+        button.textContent = 'Copied';
+        setTimeout(function () { button.textContent = 'Copy'; }, 1500);
+      }, function () {
+        button.textContent = 'Select and copy';
+      });
+    });
+  });
+
+  if (!token) {
+    show('error', 'Login failed',
+         (error ? 'Google returned an error (' + error + '). ' : 'No access token was received. ') +
+         'Run the login again from DuckDB.');
+    return;
+  }
+
+  fetch('/', {
+    method: 'POST',
+    body: 'state=' + encodeURIComponent(state) + '&access_token=' + encodeURIComponent(token)
+  }).then(function (response) {
+    if (response.ok) {
+      show('ok', 'Login complete', 'You can close this window and return to DuckDB.');
+    } else if (response.status === 403) {
+      show('error', 'Login rejected',
+           'This login doesn\'t match the one DuckDB is waiting for (OAuth state mismatch). ' +
+           'Run the login again from DuckDB rather than reusing an old link or tab.');
+    } else {
+      showToken('DuckDB didn\'t accept the login (HTTP ' + response.status + ').');
+    }
+  }, function () {
+    showToken('Couldn\'t reach DuckDB to hand over the login.');
+  });
+})();
+</script>)HTML");
 }
 
 void RegisterImplicitGrantHandlers(HttpServer &server, ListenerOutcome &outcome, int max_attempts,
@@ -504,16 +673,23 @@ void RegisterImplicitGrantHandlers(HttpServer &server, ListenerOutcome &outcome,
 	           [](const HttpRequest &, HttpResponse &res) { res.set_content(BuildRedirectPageBody(), "text/html"); });
 
 	server.Post(".*", [&outcome, max_attempts, expected_state](const HttpRequest &req, HttpResponse &res) {
+		// Not our callback (wrong/missing state, malformed body, or a stray
+		// request) - keep waiting for the real one, and tell the page's JS
+		// which it was: a state mismatch (403) must not fall back to showing
+		// the token the way any other failure (400) does - see
+		// BuildRedirectPageBody.
+		try {
+			RequireMatchingState(ExtractQueryParam(req.body, "state"), expected_state, "callback");
+		} catch (const Exception &) {
+			res.status = 403;
+			SignalFailedAttempt(outcome, max_attempts);
+			return;
+		}
 		try {
 			std::string token = ParseTokenPayload(req.body, expected_state);
 			SignalSuccess(outcome, token);
 			res.status = 200;
 		} catch (const Exception &) {
-			// Not our callback (wrong/missing state, malformed body, or a
-			// stray request) - keep waiting for the real one, and tell the
-			// page's JS (see BuildRedirectPageBody's response.ok check) so it
-			// doesn't redirect to the success page over a callback that
-			// actually failed.
 			res.status = 400;
 			SignalFailedAttempt(outcome, max_attempts);
 		}
@@ -534,20 +710,33 @@ bool HandlePastedImplicitGrantToken(const std::string &pasted_line, const std::s
 	}
 }
 
-// The page served for the browser's GET carrying the authorization code.
+// The pages served for the browser's GET carrying the authorization code.
 // Unlike BuildRedirectPageBody, no client-side JS is needed: the code is
 // already visible to us as a normal query parameter, since (unlike an
 // implicit-grant access token) it's safe to expose to the redirect handler
-// over the network.
-std::string BuildAuthorizationCodeAckBody() {
-	return "<html><body>Login complete - you can close this window.</body></html>";
+// over the network - so the outcome is known server-side and rendered
+// directly. Static text only: nothing from the request is echoed back.
+std::string BuildAuthorizationCodeSuccessBody() {
+	return BuildSimpleStatusPage("ok", "Login complete", "You can close this window and return to DuckDB.");
+}
+
+std::string BuildAuthorizationCodeStateMismatchBody() {
+	return BuildSimpleStatusPage(
+	    "error", "Login rejected",
+	    "This login doesn't match the one DuckDB is waiting for (OAuth state mismatch). Run the "
+	    "login again from DuckDB rather than reusing an old link or tab.");
+}
+
+std::string BuildAuthorizationCodeFailureBody() {
+	return BuildSimpleStatusPage(
+	    "error", "Login failed",
+	    "No authorization code was received - the login may have been cancelled or denied. Run the "
+	    "login again from DuckDB.");
 }
 
 void RegisterAuthorizationCodeHandlers(HttpServer &server, ListenerOutcome &outcome, int max_attempts,
                                        const std::string &expected_state) {
 	server.Get(".*", [&outcome, max_attempts, expected_state](const HttpRequest &req, HttpResponse &res) {
-		res.set_content(BuildAuthorizationCodeAckBody(), "text/html");
-
 		// A browser's automatic favicon probe (or any other GET with no query
 		// string at all) can't possibly be our callback - the real redirect
 		// always carries `state=` and `code=` in its query string. Skip it
@@ -556,16 +745,28 @@ void RegisterAuthorizationCodeHandlers(HttpServer &server, ListenerOutcome &outc
 		// all): otherwise it would silently burn one of max_attempts on a
 		// request that was never a real callback attempt.
 		if (req.target.find('?') == std::string::npos) {
+			res.status = 404;
 			return;
 		}
 
+		// Not our callback (wrong/missing state, no code - e.g. Google's
+		// `error=access_denied` redirect - or some other stray request with a
+		// query string): keep waiting for the real one, and say which it was.
+		try {
+			RequireMatchingState(ExtractQueryParam(req.target, "state"), expected_state, "callback");
+		} catch (const Exception &) {
+			res.status = 403;
+			res.set_content(BuildAuthorizationCodeStateMismatchBody(), "text/html");
+			SignalFailedAttempt(outcome, max_attempts);
+			return;
+		}
 		try {
 			std::string code = ParseAuthorizationCodeCallback(req.target, expected_state);
+			res.set_content(BuildAuthorizationCodeSuccessBody(), "text/html");
 			SignalSuccess(outcome, code);
 		} catch (const Exception &) {
-			// Not our callback (wrong/missing state, no code, or some other
-			// stray request with a query string) - keep waiting for the real
-			// one.
+			res.status = 400;
+			res.set_content(BuildAuthorizationCodeFailureBody(), "text/html");
 			SignalFailedAttempt(outcome, max_attempts);
 		}
 	});

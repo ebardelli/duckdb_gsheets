@@ -189,12 +189,20 @@ bool WaitUntil(std::atomic<bool> &flag) {
 	return flag;
 }
 
+// What the listener sent back for a GET-then-POST round trip: the page
+// served for the redirect, and the status the page's JS keys its outcome
+// message off.
+struct GetThenPostResult {
+	std::string page_body;
+	int post_status;
+};
+
 // Sends a GET (simulating the OAuth redirect landing) then a POST with the
 // given body (simulating the redirect page's JS posting back what it parsed
 // out of the URL fragment). `host` is "127.0.0.1" or "::1" - the latter
 // exercises the IPv6 listener the same way macOS Safari's preference for
 // resolving "localhost" to ::1 does in production.
-void SendGetThenPost(int port, const std::string &post_body, const std::string &host = "127.0.0.1") {
+GetThenPostResult SendGetThenPost(int port, const std::string &post_body, const std::string &host = "127.0.0.1") {
 	duckdb_httplib::Client cli(host, port);
 	cli.set_connection_timeout(2, 0);
 
@@ -213,11 +221,18 @@ void SendGetThenPost(int port, const std::string &post_body, const std::string &
 
 	auto post_result = cli.Post("/", post_body, "application/x-www-form-urlencoded");
 	REQUIRE(post_result);
+	return {get_result->body, post_result->status};
 }
+
+// Status and body of a single GET the listener answered.
+struct GetResult {
+	int status;
+	std::string body;
+};
 
 // Sends a single GET with the given query string (simulating the OAuth
 // redirect carrying the authorization code).
-void SendCodeCallbackGet(int port, const std::string &query, const std::string &host = "127.0.0.1") {
+GetResult SendCodeCallbackGet(int port, const std::string &query, const std::string &host = "127.0.0.1") {
 	duckdb_httplib::Client cli(host, port);
 	cli.set_connection_timeout(2, 0);
 
@@ -230,11 +245,12 @@ void SendCodeCallbackGet(int port, const std::string &query, const std::string &
 		std::this_thread::sleep_for(std::chrono::milliseconds(20));
 	}
 	REQUIRE(result);
+	return {result->status, result->body};
 }
 
 // Sends a single GET with no query string at all (simulating a browser's
 // automatic /favicon.ico probe alongside the real redirect).
-void SendPlainGet(int port, const std::string &path, const std::string &host = "127.0.0.1") {
+GetResult SendPlainGet(int port, const std::string &path, const std::string &host = "127.0.0.1") {
 	duckdb_httplib::Client cli(host, port);
 	cli.set_connection_timeout(2, 0);
 
@@ -247,6 +263,7 @@ void SendPlainGet(int port, const std::string &path, const std::string &host = "
 		std::this_thread::sleep_for(std::chrono::milliseconds(20));
 	}
 	REQUIRE(result);
+	return {result->status, result->body};
 }
 
 } // namespace
@@ -270,7 +287,13 @@ TEST_CASE("RunLocalOAuthListener returns the token posted with the matching stat
 	REQUIRE(WaitUntil(listening));
 
 	const std::string fake_token = "ya29.fake-integration-test-token";
-	SendGetThenPost(port, "state=" + state + "&access_token=" + fake_token);
+	auto response = SendGetThenPost(port, "state=" + state + "&access_token=" + fake_token);
+
+	// The status page is served entirely by the listener: it reports the
+	// outcome in place rather than redirecting to a remote site.
+	REQUIRE(response.page_body.find("fetch('/'") != std::string::npos);
+	REQUIRE(response.page_body.find("https://") == std::string::npos);
+	REQUIRE(response.post_status == 200);
 
 	server_thread.join();
 
@@ -334,11 +357,47 @@ TEST_CASE("RunLocalOAuthListener ignores a callback with the wrong state and wai
 
 	// An attacker (or an unrelated stray request) racing the real flow with
 	// a forged/mismatched state must not be accepted.
-	SendGetThenPost(port, "state=wrong-state&access_token=attacker-forged-token");
+	// 403 tells the page it's a state mismatch, so it must not fall back to
+	// showing the token.
+	REQUIRE(SendGetThenPost(port, "state=wrong-state&access_token=attacker-forged-token").post_status == 403);
 
 	// The real redirect follows shortly after, with the correct state.
 	const std::string real_token = "ya29.the-real-token";
 	SendGetThenPost(port, "state=" + state + "&access_token=" + real_token);
+
+	server_thread.join();
+
+	if (thread_exception) {
+		std::rethrow_exception(thread_exception);
+	}
+	REQUIRE(result == real_token);
+}
+
+TEST_CASE("RunLocalOAuthListener answers a matching-state callback with no token with 400",
+          "[oauth_listener][integration]") {
+	// Anything other than a state mismatch gets a 400, which is what tells
+	// the page to fall back to showing the token for a manual paste.
+	const int port = TEST_PORT_BASE + 11;
+	const std::string state = "no-token-state";
+
+	std::atomic<bool> listening {false};
+	std::string result;
+	std::exception_ptr thread_exception;
+
+	AutoJoinThread server_thread([&]() {
+		try {
+			result = RunLocalOAuthListener(port, state, [&]() { listening = true; });
+		} catch (...) {
+			thread_exception = std::current_exception();
+		}
+	});
+
+	REQUIRE(WaitUntil(listening));
+
+	REQUIRE(SendGetThenPost(port, "state=" + state + "&access_token=").post_status == 400);
+
+	const std::string real_token = "ya29.the-real-token-after-a-bad-post";
+	REQUIRE(SendGetThenPost(port, "state=" + state + "&access_token=" + real_token).post_status == 200);
 
 	server_thread.join();
 
@@ -598,7 +657,9 @@ TEST_CASE("RunLocalOAuthCodeListener returns the code from a GET with the matchi
 	REQUIRE(WaitUntil(listening));
 
 	const std::string fake_code = "4/0Afake-integration-test-code";
-	SendCodeCallbackGet(port, "state=" + state + "&code=" + fake_code);
+	auto response = SendCodeCallbackGet(port, "state=" + state + "&code=" + fake_code);
+	REQUIRE(response.status == 200);
+	REQUIRE(response.body.find("Login complete") != std::string::npos);
 
 	server_thread.join();
 
@@ -627,7 +688,10 @@ TEST_CASE("RunLocalOAuthCodeListener ignores a callback with the wrong state and
 
 	REQUIRE(WaitUntil(listening));
 
-	SendCodeCallbackGet(port, "state=wrong-state&code=attacker-forged-code");
+	auto rejected = SendCodeCallbackGet(port, "state=wrong-state&code=attacker-forged-code");
+	REQUIRE(rejected.status == 403);
+	REQUIRE(rejected.body.find("Login rejected") != std::string::npos);
+	REQUIRE(rejected.body.find("Login complete") == std::string::npos);
 
 	const std::string real_code = "4/0Athe-real-code";
 	SendCodeCallbackGet(port, "state=" + state + "&code=" + real_code);
@@ -663,10 +727,47 @@ TEST_CASE("RunLocalOAuthCodeListener doesn't count a favicon-style GET against m
 
 	REQUIRE(WaitUntil(listening));
 
-	SendPlainGet(port, "/favicon.ico");
-	SendPlainGet(port, "/favicon.ico");
+	REQUIRE(SendPlainGet(port, "/favicon.ico").status == 404);
+	REQUIRE(SendPlainGet(port, "/favicon.ico").status == 404);
 
 	const std::string real_code = "4/0Athe-real-code-past-favicons";
+	SendCodeCallbackGet(port, "state=" + state + "&code=" + real_code);
+
+	server_thread.join();
+
+	if (thread_exception) {
+		std::rethrow_exception(thread_exception);
+	}
+	REQUIRE(result == real_code);
+}
+
+TEST_CASE("RunLocalOAuthCodeListener reports a denied login as failed and keeps waiting",
+          "[oauth_listener][integration]") {
+	// Google's redirect when the user cancels or denies consent carries the
+	// right state but an error instead of a code.
+	const int port = TEST_PORT_BASE + 12;
+	const std::string state = "code-denied-state";
+
+	std::atomic<bool> listening {false};
+	std::string result;
+	std::exception_ptr thread_exception;
+
+	AutoJoinThread server_thread([&]() {
+		try {
+			result = RunLocalOAuthCodeListener(port, state, [&]() { listening = true; });
+		} catch (...) {
+			thread_exception = std::current_exception();
+		}
+	});
+
+	REQUIRE(WaitUntil(listening));
+
+	auto denied = SendCodeCallbackGet(port, "error=access_denied&state=" + state);
+	REQUIRE(denied.status == 400);
+	REQUIRE(denied.body.find("Login failed") != std::string::npos);
+	REQUIRE(denied.body.find("access_denied") == std::string::npos);
+
+	const std::string real_code = "4/0Athe-real-code-after-a-denial";
 	SendCodeCallbackGet(port, "state=" + state + "&code=" + real_code);
 
 	server_thread.join();
