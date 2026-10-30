@@ -344,4 +344,4 @@ This will also require an additional API request approximately every 30 minutes.
 
 ## Support
 
-If you are having problems, find a bug, or have an idea for an improvement, please [file an issue on GitHub](https://github.com/evidence-dev/duckdb_gsheets).
+If you are having problems, find a bug, or have an idea for an improvement, please [file an issue on GitHub](https://github.com/ebardelli/duckdb_gsheets/issues).

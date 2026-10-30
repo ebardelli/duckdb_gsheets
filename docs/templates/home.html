@@ -1,26 +1,3 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DuckDB GSheets</title>
-  <meta name="description" content="A DuckDB extension for reading and writing Google Sheets with SQL.">
-  <link rel="icon" href="favicon.ico" sizes="any">
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <header>
-    <a class="brand" href="./"><img src="icon-512.png" alt=""> DuckDB GSheets</a>
-    <nav>
-      <a href="https://github.com/ebardelli/duckdb_gsheets#readme">Docs</a>
-      <a href="privacy/">Privacy</a>
-      <a href="https://github.com/ebardelli/duckdb_gsheets">GitHub</a>
-    </nav>
-  </header>
-
-  <main>
     <h1>DuckDB GSheets</h1>
     <p class="lead">A DuckDB extension for reading and writing Google Sheets with SQL.</p>
 
@@ -48,8 +25,7 @@ LOAD gsheets;</code></pre>
 
     <h3>DuckDB-WASM</h3>
     <p>DuckDB-WASM can't install from external extension repositories yet, but an app that embeds it can load the
-      build directly. See the <a href="https://github.com/ebardelli/duckdb_gsheets#duckdb-wasm">DuckDB-WASM
-      instructions</a>.</p>
+      build directly. See <a href="install/#duckdb-wasm">DuckDB-WASM</a>.</p>
 
     <h2>Quick start</h2>
     <pre><code>-- Sign in with your Google account in the browser
@@ -61,14 +37,6 @@ FROM read_gsheet('https://docs.google.com/spreadsheets/d/11QdEasMWbETbFVxry-SsD8
 -- Write a table to a sheet
 COPY my_table TO 'https://docs.google.com/spreadsheets/d/11QdEasMWbETbFVxry-SsD8jVcdYIT1zBQszcF84MdE8/edit' (FORMAT gsheet);</code></pre>
 
-    <p>The <a href="https://github.com/ebardelli/duckdb_gsheets#readme">full documentation</a> covers the other ways
-      to authenticate (your own OAuth client, refresh tokens for pipelines, service accounts), reading specific
-      sheets and ranges, and the write options.</p>
-  </main>
-
-  <footer>
-    <a href="privacy/">Privacy policy</a> ·
-    <a href="https://github.com/ebardelli/duckdb_gsheets">Source on GitHub</a>
-  </footer>
-</body>
-</html>
+    <p>See <a href="authentication/">Authenticate</a> for the other ways to sign in (your own OAuth client,
+      refresh tokens for pipelines, service accounts), and <a href="read-and-write/">Read and write</a> for reading
+      specific sheets and ranges and the write options.</p>
