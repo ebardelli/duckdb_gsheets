@@ -7,7 +7,7 @@
 # library itself does (see build_static_extension in
 # duckdb/extension/extension_build_tools.cmake) - so it only builds as part of
 # the full build (`GEN=ninja make`), not on its own. See
-# docs/pages/development.md.
+# docs/development.md.
 #
 # This directory is only ever processed via add_subdirectory() from the
 # extension's root CMakeLists.txt, itself pulled into DuckDB's own CMake project

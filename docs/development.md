@@ -19,7 +19,7 @@ duckdb_gsheets/
 │   ├── unit/                   # C++ unit tests (standalone, no credentials needed)
 │   └── integration/            # C++ tests that need the full extension build (no credentials needed)
 ├── scripts/                    # Dev scripts (test runners, token generation)
-├── docs/                       # Documentation site
+├── docs/                       # Contributor docs; site/ is the GitHub Pages site
 ├── .github/workflows/          # CI pipelines
 ├── duckdb/                     # DuckDB submodule
 └── extension-ci-tools/         # DuckDB CI tooling submodule
