@@ -12,24 +12,28 @@
 using namespace duckdb;
 
 // Runs COPY through DuckDB's real execution paths with the gsheet_write callback set, so a callback that the
-// engine requires but the copy function leaves unset fails here instead of on a user's query. Only the two
-// callbacks that call the Sheets API are swapped for stubs that record the rows they receive.
+// engine requires but the copy function leaves unset fails here instead of on a user's query. Sink is the real one;
+// only the two callbacks that call the Sheets API are swapped for stubs, and the Finalize stub records the rows
+// Sink collected instead of sending them.
 
 namespace {
 
 std::mutex sunk_mutex;
 std::vector<int64_t> sunk_values;
+int finalize_calls = 0;
 
 constexpr const char *TEST_FORMAT = "gsheet_write_test";
 
-unique_ptr<GlobalFunctionData> StubInitializeGlobal(ClientContext &, FunctionData &, const string &) {
-	return make_uniq<GlobalFunctionData>();
+unique_ptr<GlobalFunctionData> StubInitializeGlobal(ClientContext &context, FunctionData &, const string &) {
+	return make_uniq<GSheetCopyGlobalState>(context, nullptr, nullptr, "spreadsheet-id", "Sheet1");
 }
 
-void StubSink(ExecutionContext &, FunctionData &, GlobalFunctionData &, LocalFunctionData &, DataChunk &input) {
+void StubFinalize(ClientContext &, FunctionData &, GlobalFunctionData &gstate_p) {
+	auto &gstate = gstate_p.Cast<GSheetCopyGlobalState>();
 	std::lock_guard<std::mutex> guard(sunk_mutex);
-	for (idx_t row_ix = 0; row_ix < input.size(); row_ix++) {
-		sunk_values.push_back(input.GetValue(0, row_ix).GetValue<int64_t>());
+	finalize_calls++;
+	for (auto &row : gstate.rows) {
+		sunk_values.push_back(std::stoll(row.at(0)));
 	}
 }
 
@@ -37,7 +41,7 @@ CopyFunction MakeTestCopyFunction() {
 	CopyFunction function = GSheetCopyFunction();
 	function.name = TEST_FORMAT;
 	function.copy_to_initialize_global = StubInitializeGlobal;
-	function.copy_to_sink = StubSink;
+	function.copy_to_finalize = StubFinalize;
 	return function;
 }
 
@@ -45,6 +49,7 @@ void RunCopy(Connection &con, const string &query) {
 	{
 		std::lock_guard<std::mutex> guard(sunk_mutex);
 		sunk_values.clear();
+		finalize_calls = 0;
 	}
 	auto result = con.Query("COPY (" + query + ") TO 'spreadsheet-id' (FORMAT " + TEST_FORMAT + ", sheet 'Sheet1')");
 	if (result->HasError()) {
@@ -78,6 +83,7 @@ TEST_CASE("gsheet_write runs through DuckDB's COPY execution paths", "[copy_func
 	SECTION("insertion order is kept for a plain multi-vector query") {
 		RunCopy(con, "SELECT i FROM range(10000) t(i)");
 		REQUIRE(sunk_values == Range(0, 10000, 1));
+		REQUIRE(finalize_calls == 1);
 	}
 
 	SECTION("every row arrives when insertion order is not preserved") {
