@@ -27,7 +27,7 @@ FIELD_SIZE = 32
 
 
 def read_footer(path):
-    with (gzip.open(path, 'rb') if path.suffix == '.gz' else open(path, 'rb')) as f:
+    with gzip.open(path, 'rb') if path.suffix == '.gz' else open(path, 'rb') as f:
         data = f.read()
     if len(data) < FOOTER_SIZE:
         raise ValueError(f'{path}: too small to be a DuckDB extension')

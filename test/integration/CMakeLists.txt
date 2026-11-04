@@ -6,8 +6,7 @@
 # target the full extension build already produces the same way the extension
 # library itself does (see build_static_extension in
 # duckdb/extension/extension_build_tools.cmake) - so it only builds as part of
-# the full build (`GEN=ninja make`), not on its own. See
-# docs/development.md.
+# the full build (`GEN=ninja make`), not on its own. See docs/development.md.
 #
 # This directory is only ever processed via add_subdirectory() from the
 # extension's root CMakeLists.txt, itself pulled into DuckDB's own CMake project
@@ -33,8 +32,8 @@ add_executable(
 # tools/shell/CMakeLists.txt): GNU ld's single-pass, order-sensitive static-lib
 # resolution only pulls duckdb_generated_extension_loader's definition of
 # LoadAllExtensions in if duckdb_static (which references it) already appeared
-# on the link line - the reverse order links fine with macOS's linker but
-# fails with an undefined reference on Linux.
+# on the link line - the reverse order links fine with macOS's linker but fails
+# with an undefined reference on Linux.
 target_link_libraries(oauth_listener_tests duckdb_static duckdb_mbedtls)
 link_extension_libraries(oauth_listener_tests "")
 
@@ -45,11 +44,11 @@ if(WIN32)
   target_link_libraries(oauth_listener_tests ws2_32)
 endif()
 
-# COPY TO tests: drive the gsheet_write callback set through DuckDB's own
-# COPY execution paths, so a callback the engine requires but the copy
-# function leaves unset fails here rather than only in the credentialed SQL
-# tests. Links the static extension library for gsheets_copy.cpp and its
-# dependencies; no credentials or network access needed.
+# COPY TO tests: drive the gsheet_write callback set through DuckDB's own COPY
+# execution paths, so a callback the engine requires but the copy function
+# leaves unset fails here rather than only in the credentialed SQL tests. Links
+# the static extension library for gsheets_copy.cpp and its dependencies; no
+# credentials or network access needed.
 add_executable(
   copy_function_tests ${CMAKE_CURRENT_SOURCE_DIR}/../unit/test_main.cpp
                       ${CMAKE_CURRENT_SOURCE_DIR}/test_copy_function.cpp)

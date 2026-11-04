@@ -148,9 +148,7 @@ def main():
             content = add_heading_ids(md.render(text))
 
         current = ' aria-current="page"'
-        nav = '\n'.join(
-            f'      <a href="{root}{p}/"{current if p == path else ""}>{label}</a>' for p, label in NAV
-        )
+        nav = '\n'.join(f'      <a href="{root}{p}/"{current if p == path else ""}>{label}</a>' for p, label in NAV)
         out = args.out / path / 'index.html'
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(

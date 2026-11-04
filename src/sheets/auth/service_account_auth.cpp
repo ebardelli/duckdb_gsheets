@@ -68,8 +68,8 @@ std::string ServiceAccountAuth::CreateJwt() {
 	// Parse PEM private key (PKCS#8 or PKCS#1); mbedtls needs the PEM's
 	// terminating NUL counted in the length
 	PkContext pk;
-	if (mbedtls_pk_parse_key(&pk.ctx, reinterpret_cast<const unsigned char *>(pem.c_str()), pem.size() + 1, nullptr,
-	                         0, RandomBytes, nullptr) != 0) {
+	if (mbedtls_pk_parse_key(&pk.ctx, reinterpret_cast<const unsigned char *>(pem.c_str()), pem.size() + 1, nullptr, 0,
+	                         RandomBytes, nullptr) != 0) {
 		throw duckdb::IOException("Failed to parse private key");
 	}
 	if (!mbedtls_pk_can_do(&pk.ctx, MBEDTLS_PK_RSA)) {
