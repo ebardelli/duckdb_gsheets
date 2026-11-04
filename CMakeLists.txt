@@ -16,9 +16,9 @@ include_directories(duckdb/third_party/httplib)
 
 # oauth_listener.cpp plus the non-DuckDB sources it calls into
 # (gsheets_utils.cpp, encoding.cpp). Kept as one variable, rather than
-# hand-duplicated file lists, because test/integration/CMakeLists.txt needs
-# this exact set to link its standalone oauth_listener_tests binary (see its
-# own comment) - a variable can't drift out of sync with itself the way two
+# hand-duplicated file lists, because test/integration/CMakeLists.txt needs this
+# exact set to link its standalone oauth_listener_tests binary (see its own
+# comment) - a variable can't drift out of sync with itself the way two
 # separately maintained lists could.
 set(OAUTH_LISTENER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sheets/auth/oauth_listener.cpp
@@ -64,27 +64,30 @@ target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
 
 # duckdb's vendored httplib now loads TLS roots from the macOS Keychain by
-# default (CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN), which needs Security.framework.
+# default (CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN), which needs
+# Security.framework.
 if(APPLE)
-  target_link_libraries(${EXTENSION_NAME} "-framework Security" "-framework CoreFoundation")
-  target_link_libraries(${LOADABLE_EXTENSION_NAME} "-framework Security" "-framework CoreFoundation")
+  target_link_libraries(${EXTENSION_NAME} "-framework Security"
+                        "-framework CoreFoundation")
+  target_link_libraries(${LOADABLE_EXTENSION_NAME} "-framework Security"
+                        "-framework CoreFoundation")
 endif()
 
 # The local OAuth listener (src/sheets/auth/oauth_listener.cpp) uses the
-# vendored httplib::Server, which uses Winsock on Windows. httplib.hpp's
-# #pragma comment(lib, "ws2_32.lib") only takes effect for MSVC, so link
-# ws2_32 explicitly here for other toolchains (e.g. MinGW/Ninja generators),
-# matching test/integration/CMakeLists.txt.
+# vendored httplib::Server, which uses Winsock on Windows. httplib.hpp's #pragma
+# comment(lib, "ws2_32.lib") only takes effect for MSVC, so link ws2_32
+# explicitly here for other toolchains (e.g. MinGW/Ninja generators), matching
+# test/integration/CMakeLists.txt.
 if(WIN32)
   target_link_libraries(${EXTENSION_NAME} ws2_32)
   target_link_libraries(${LOADABLE_EXTENSION_NAME} ws2_32)
 endif()
 
-# oauth_listener.cpp's Catch2 tests (test/unit/sheets/auth/test_oauth_listener.cpp)
-# can't link into the standalone test/unit target (see its CMakeLists.txt),
-# so they're built here instead, as part of the full extension build - same
-# condition DuckDB itself uses to decide whether to build its own unittest
-# runner.
+# oauth_listener.cpp's Catch2 tests
+# (test/unit/sheets/auth/test_oauth_listener.cpp) can't link into the standalone
+# test/unit target (see its CMakeLists.txt), so they're built here instead, as
+# part of the full extension build - same condition DuckDB itself uses to decide
+# whether to build its own unittest runner.
 if(${BUILD_UNITTESTS})
   add_subdirectory(test/integration)
 endif()

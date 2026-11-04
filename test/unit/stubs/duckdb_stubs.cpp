@@ -5,8 +5,7 @@
 
 namespace duckdb {
 
-Exception::Exception(ExceptionType exception_type, const string &message)
-    : std::runtime_error(message) {
+Exception::Exception(ExceptionType exception_type, const string &message) : std::runtime_error(message) {
 }
 
 Exception::Exception(const unordered_map<string, string> &extra_info, ExceptionType exception_type,

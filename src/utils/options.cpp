@@ -3,8 +3,8 @@
 
 #include "utils/options.hpp"
 
-std::string duckdb::sheets::GetStringOption(const identifier_map_t<vector<Value>> &options,
-                                            const std::string &name, const std::string &default_value) {
+std::string duckdb::sheets::GetStringOption(const identifier_map_t<vector<Value>> &options, const std::string &name,
+                                            const std::string &default_value) {
 	const auto it = options.find(Identifier(name));
 	if (it == options.end()) {
 		return default_value;

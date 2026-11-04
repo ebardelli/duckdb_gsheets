@@ -33,8 +33,8 @@ add_executable(
 # tools/shell/CMakeLists.txt): GNU ld's single-pass, order-sensitive static-lib
 # resolution only pulls duckdb_generated_extension_loader's definition of
 # LoadAllExtensions in if duckdb_static (which references it) already appeared
-# on the link line - the reverse order links fine with macOS's linker but
-# fails with an undefined reference on Linux.
+# on the link line - the reverse order links fine with macOS's linker but fails
+# with an undefined reference on Linux.
 target_link_libraries(oauth_listener_tests duckdb_static OpenSSL::SSL
                       OpenSSL::Crypto)
 link_extension_libraries(oauth_listener_tests "")
@@ -53,11 +53,11 @@ if(APPLE)
                         "-framework CoreFoundation")
 endif()
 
-# COPY TO tests: drive the gsheet_write callback set through DuckDB's own
-# COPY execution paths, so a callback the engine requires but the copy
-# function leaves unset fails here rather than only in the credentialed SQL
-# tests. Links the static extension library for gsheets_copy.cpp and its
-# dependencies; no credentials or network access needed.
+# COPY TO tests: drive the gsheet_write callback set through DuckDB's own COPY
+# execution paths, so a callback the engine requires but the copy function
+# leaves unset fails here rather than only in the credentialed SQL tests. Links
+# the static extension library for gsheets_copy.cpp and its dependencies; no
+# credentials or network access needed.
 add_executable(
   copy_function_tests ${CMAKE_CURRENT_SOURCE_DIR}/../unit/test_main.cpp
                       ${CMAKE_CURRENT_SOURCE_DIR}/test_copy_function.cpp)
