@@ -44,6 +44,7 @@ set(EXTENSION_SOURCES
     src/sheets/transport/mock_http_client.cpp
     src/sheets/transport/client_factory.cpp
     src/sheets/range.cpp
+    src/sheets/util/batching.cpp
     src/sheets/auth_factory.cpp
     src/utils/secret.cpp
     src/utils/options.cpp

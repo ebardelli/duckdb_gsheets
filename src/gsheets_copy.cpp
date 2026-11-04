@@ -1,3 +1,5 @@
+#include <chrono>
+#include <thread>
 #include <utility>
 
 #include "duckdb/common/exception.hpp"
@@ -19,8 +21,38 @@
 #include "sheets/range.hpp"
 #include "sheets/transport/client_factory.hpp"
 #include "sheets/types.hpp"
+#include "sheets/util/batching.hpp"
 
 namespace duckdb {
+
+namespace {
+
+// The range the rows are appended to, and the same range as ValueRange.range wants it (not URL-encoded)
+std::string AppendRange(const std::string &sheet_name, const std::string &sheet_range, bool encode) {
+	auto range = encode ? url_encode(sheet_name) : sheet_name;
+	if (!sheet_range.empty()) {
+		range += "!" + sheet_range;
+	}
+	return range;
+}
+
+// Waits out a rate-limit backoff in short steps, so an interrupted query stops waiting
+void InterruptibleSleep(ClientContext &context, std::chrono::milliseconds duration) {
+	constexpr std::chrono::milliseconds STEP {100};
+	auto deadline = std::chrono::steady_clock::now() + duration;
+	while (true) {
+		if (context.IsInterrupted()) {
+			throw InterruptException();
+		}
+		auto now = std::chrono::steady_clock::now();
+		if (now >= deadline) {
+			return;
+		}
+		std::this_thread::sleep_for(std::min<std::chrono::steady_clock::duration>(STEP, deadline - now));
+	}
+}
+
+} // namespace
 
 // DuckDB checks every COPY TO target against the filesystem before handing it to the copy function, and a
 // docs.google.com URL is claimed by httpfs, which cannot answer those checks. Move the URL's gid and range into
@@ -54,7 +86,8 @@ GSheetCopyFunction::GSheetCopyFunction() : CopyFunction(WRITE_FORMAT) {
 	copy_to_initialize_global = GSheetWriteInitializeGlobal;
 	copy_to_initialize_local = GSheetWriteInitializeLocal;
 	copy_to_sink = GSheetWriteSink;
-	// Rows are appended in sink, but DuckDB 2.0's batched and file lifecycle paths require these callbacks
+	// Sink collects rows into the global state, so there is nothing to combine, but DuckDB 2.0's batched and file
+	// lifecycle paths require the callback. Finalize sends the rows.
 	copy_to_combine = GSheetWriteCombine;
 	copy_to_finalize = GSheetWriteFinalize;
 }
@@ -100,8 +133,8 @@ unique_ptr<GlobalFunctionData> GSheetCopyFunction::GSheetWriteInitializeGlobal(C
 
 	// Initialize client. allow_interactive_reauth=false: this auth provider is
 	// stored in GlobalFunctionData and its GetAuthorizationHeader is called
-	// again from GSheetWriteSink on every batch, potentially from a different
-	// worker thread each time under a parallel COPY (PER_THREAD_OUTPUT) - see
+	// again from GSheetWriteFinalize, potentially on a different worker
+	// thread than this one, and once per file under PER_THREAD_OUTPUT - see
 	// CreateAuthFromSecret's doc. An invalid_grant there still fails cleanly,
 	// same as before automatic reauth existed; only a single-threaded caller
 	// like ReadSheetBind gets the interactive reauth path.
@@ -150,22 +183,13 @@ unique_ptr<GlobalFunctionData> GSheetCopyFunction::GSheetWriteInitializeGlobal(C
 		client.Spreadsheets(spreadsheet_id).Values().Clear(sheets::A1Range(encoded_sheet_name));
 	}
 
-	// Make the API call to write headers to the Google Sheet
-	// If we are appending, header defaults to false
+	auto gstate =
+	    make_uniq<GSheetCopyGlobalState>(context, std::move(http), std::move(auth), spreadsheet_id, sheet_name);
+	// The header goes out with the first batch of rows in Finalize. If we are appending, header defaults to false.
 	if (options.header) {
-		sheets::ValueRange header_values;
-		header_values.range = sheet_range.empty() ? sheet_name : sheet_name + "!" + sheet_range;
-		header_values.majorDimension = sheets::ROWS;
-		header_values.values.push_back(options.name_list);
-
-		auto range_str = encoded_sheet_name;
-		if (!sheet_range.empty()) {
-			range_str += "!" + sheet_range;
-		}
-		client.Spreadsheets(spreadsheet_id).Values().Append(sheets::A1Range(range_str), header_values);
+		gstate->rows.push_back(options.name_list);
 	}
-	return make_uniq<GSheetCopyGlobalState>(context, std::move(http), std::move(auth), spreadsheet_id,
-	                                        sheet_name);
+	return std::move(gstate);
 }
 
 unique_ptr<LocalFunctionData> GSheetCopyFunction::GSheetWriteInitializeLocal(ExecutionContext &context,
@@ -177,46 +201,52 @@ void GSheetCopyFunction::GSheetWriteCombine(ExecutionContext &context, FunctionD
                                             GlobalFunctionData &gstate, LocalFunctionData &lstate) {
 }
 
-void GSheetCopyFunction::GSheetWriteFinalize(ClientContext &context, FunctionData &bind_data,
-                                             GlobalFunctionData &gstate) {
-}
-
 void GSheetCopyFunction::GSheetWriteSink(ExecutionContext &context, FunctionData &bind_data_p,
                                          GlobalFunctionData &gstate_p, LocalFunctionData &lstate, DataChunk &input) {
 	input.Flatten();
 	auto &gstate = gstate_p.Cast<GSheetCopyGlobalState>();
 
-	auto options = bind_data_p.Cast<GSheetWriteBindData>().options;
-	// Resolved once in GSheetWriteInitializeGlobal
-	const std::string &sheet_name = gstate.sheet_name;
-	std::string sheet_range = options.range;
-
-	auto client = sheets::GoogleSheetsClient(*gstate.http, *gstate.auth);
-
-	std::string encoded_sheet_name = url_encode(sheet_name);
-
-	// Build ValueRange from input chunk
-	sheets::ValueRange data;
-	data.range = sheet_range.empty() ? sheet_name : sheet_name + "!" + sheet_range;
-	data.majorDimension = sheets::ROWS;
-
+	// Only convert here; every request is sent from Finalize, so a large export takes a handful of requests
+	// instead of one per chunk and doesn't run into the per-minute write quota
+	std::vector<std::vector<std::string>> rows;
+	rows.reserve(input.size());
 	for (idx_t row_ix = 0; row_ix < input.size(); row_ix++) {
 		std::vector<std::string> row;
+		row.reserve(input.ColumnCount());
 		for (idx_t col_ix = 0; col_ix < input.ColumnCount(); col_ix++) {
-			auto &col = input.data[col_ix];
-			Value val = col.GetValue(row_ix);
-			if (val.IsNull()) {
-				row.emplace_back("");
-			} else {
-				row.emplace_back(val.ToString());
-			}
+			Value val = input.data[col_ix].GetValue(row_ix);
+			row.emplace_back(val.IsNull() ? "" : val.ToString());
 		}
-		data.values.emplace_back(std::move(row));
+		rows.emplace_back(std::move(row));
 	}
-	auto range_str = encoded_sheet_name;
-	if (!sheet_range.empty()) {
-		range_str += "!" + sheet_range;
+
+	std::lock_guard<std::mutex> guard(gstate.rows_lock);
+	gstate.rows.insert(gstate.rows.end(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));
+}
+
+void GSheetCopyFunction::GSheetWriteFinalize(ClientContext &context, FunctionData &bind_data_p,
+                                             GlobalFunctionData &gstate_p) {
+	auto &gstate = gstate_p.Cast<GSheetCopyGlobalState>();
+	auto &options = bind_data_p.Cast<GSheetWriteBindData>().options;
+
+	auto client = sheets::GoogleSheetsClient(*gstate.http, *gstate.auth);
+	auto values = client.Spreadsheets(gstate.spreadsheet_id).Values();
+	sheets::A1Range append_range(AppendRange(gstate.sheet_name, options.range, /*encode=*/true));
+
+	auto sleep = [&context](std::chrono::milliseconds duration) {
+		InterruptibleSleep(context, duration);
+	};
+
+	// Each request appends below the rows the previous one wrote, so sending the batches in order keeps row order
+	auto &rows = gstate.rows;
+	for (auto &batch : sheets::PlanBatches(rows)) {
+		sheets::ValueRange data;
+		data.range = AppendRange(gstate.sheet_name, options.range, /*encode=*/false);
+		data.majorDimension = sheets::ROWS;
+		data.values.assign(std::make_move_iterator(rows.begin() + batch.first),
+		                   std::make_move_iterator(rows.begin() + batch.second));
+		sheets::RetryOnRateLimit([&]() { return values.Append(append_range, data); }, sheets::RetryPolicy(), sleep);
 	}
-	client.Spreadsheets(gstate.spreadsheet_id).Values().Append(sheets::A1Range(range_str), data);
+	rows.clear();
 }
 } // namespace duckdb

@@ -23,6 +23,8 @@ set(UNIT_TEST_SOURCES
     # Util tests
     sheets/util/test_encoding.cpp
     ${EXT_ROOT}/src/sheets/util/encoding.cpp
+    sheets/util/test_batching.cpp
+    ${EXT_ROOT}/src/sheets/util/batching.cpp
     # Auth tests
     sheets/auth/test_auth.cpp
     ${EXT_ROOT}/src/sheets/auth/bearer_token_auth.cpp

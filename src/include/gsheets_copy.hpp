@@ -3,6 +3,10 @@
 
 #pragma once
 
+#include <mutex>
+#include <string>
+#include <vector>
+
 #include "duckdb/function/copy_function.hpp"
 
 #include "sheets/transport/http_client.hpp"
@@ -21,6 +25,11 @@ public:
 	std::unique_ptr<sheets::IAuthProvider> auth;
 	string spreadsheet_id;
 	string sheet_name;
+
+	//! Rows to write, header first. Sink only adds to this; Finalize sends it in as few requests as fit.
+	std::vector<std::vector<std::string>> rows;
+	//! Sink can run on several threads at once when insertion order is not preserved
+	std::mutex rows_lock;
 };
 
 struct GSheetWriteOptions {
