@@ -25,19 +25,21 @@ INSTALL AND LOAD gsheets FROM gsheets_fork;
 
 `CREATE EXTENSION REPOSITORY` prints the fingerprint of the signing key it pinned. Check that it matches `sha256:30a99a8ad18afde28756024575259ce6a65eb53232d91790efaff11035fdcacc`. The repository only needs to be created once; it persists across sessions. In later sessions, load the extension with `LOAD gsheets FROM gsheets_fork;`. To install a specific release, use `FORCE INSTALL gsheets FROM gsheets_fork VERSION 'vX.Y.Z';`.
 
+New releases are built for the newest DuckDB release only (currently 2.0.1). DuckDB 2.0.0 stays on the last release built for it, v0.2.2; upgrade DuckDB to get later releases.
+
 ### DuckDB-WASM
 
-The release also publishes builds for DuckDB-WASM (`wasm_mvp`, `wasm_eh` and `wasm_threads`), and they work in the browser: requests go through the browser's own HTTP stack. They can't be installed from the extension repository yet, because DuckDB-WASM doesn't support external extension repositories ([duckdb/duckdb-wasm#2262](https://github.com/duckdb/duckdb-wasm/issues/2262)): it has no option to enable them, and it only accepts extensions signed with DuckDB's own keys. That also rules out the public shell at shell.duckdb.org.
+The release also publishes builds for DuckDB-WASM (`wasm_eh` and `wasm_threads`), and they work in the browser: requests go through the browser's own HTTP stack. They can't be installed from the extension repository yet, because DuckDB-WASM doesn't support external extension repositories ([duckdb/duckdb-wasm#2262](https://github.com/duckdb/duckdb-wasm/issues/2262)): it has no option to enable them, and it only accepts extensions signed with DuckDB's own keys. That also rules out the public shell at shell.duckdb.org.
 
 Until that's supported, an app that embeds DuckDB-WASM can load the build directly, unsigned:
 
 ```js
 await db.open({ allowUnsignedExtensions: true });
 const conn = await db.connect();
-await conn.query(`LOAD 'https://ebardelli.github.io/duckdb_gsheets/extensions/v2.0.0/wasm_eh/gsheets.duckdb_extension.wasm'`);
+await conn.query(`LOAD 'https://ebardelli.github.io/duckdb_gsheets/extensions/v2.0.1/wasm_eh/gsheets.duckdb_extension.wasm'`);
 ```
 
-Use the `wasm_mvp` or `wasm_threads` path to match the bundle your app loads. If your DuckDB-WASM build reports a development version (`PRAGMA version` shows `v2.0.0-devNNNNN`, as the current npm `next` build does), run `SET allow_extensions_metadata_mismatch = true;` before the `LOAD`. Only load extensions this way from a source you trust: an unsigned extension runs with no signature check.
+Use the `wasm_threads` path instead if that's the bundle your app loads, and replace `v2.0.1` with the DuckDB version it reports. DuckDB 2.0.1 dropped `wasm_mvp`, so it isn't built anymore; the v0.2.2 build for 2.0.0 is still served under `v2.0.0/wasm_mvp`. If your DuckDB-WASM build reports a development version (`PRAGMA version` shows a version like `v2.0.0-devNNNNN`, as the current npm `next` build does), run `SET allow_extensions_metadata_mismatch = true;` before the `LOAD`. Only load extensions this way from a source you trust: an unsigned extension runs with no signature check.
 
 The browser login isn't available in DuckDB-WASM, since it needs a local listener for Google's redirect. Create the secret with `PROVIDER access_token`, `PROVIDER key_file` with `EMAIL` and `SECRET`, or `PROVIDER oauth` with `CLIENT_ID`, `CLIENT_SECRET` and a `REFRESH_TOKEN` obtained on a desktop.
 

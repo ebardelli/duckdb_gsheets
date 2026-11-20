@@ -20,10 +20,10 @@ jobs:
     # version that released DuckDB clients refuse to load.
     uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v2.0-cyanoptera
     with:
-      duckdb_version: v2.0.0
+      duckdb_version: v2.0.1
       ci_tools_version: v2.0-cyanoptera
       extension_name: gsheets
-      exclude_archs: "windows_amd64_rtools"
+      exclude_archs: "windows_amd64_rtools;wasm_mvp"
 
   publish:
     name: Sign and publish
